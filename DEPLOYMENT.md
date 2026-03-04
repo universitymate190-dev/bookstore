@@ -1,5 +1,20 @@
 # Deployment Instructions for Render
 
+## Admin Credentials
+
+**Default Admin Account:**
+- **Email**: shakesian6@gmail.com
+- **Password**: Casanova@1234
+- **Role**: Administrator
+
+⚠️ **IMPORTANT**: Change the admin password immediately after first login in a production environment!
+
+### Steps to Login as Admin:
+1. Go to `https://your-app.onrender.com/login` (or `http://localhost:5000/login` locally)
+2. Use the email: `shakesian6@gmail.com`
+3. Use the password: `Casanova@1234`
+4. Access admin panel at `/admin`
+
 ## Prerequisites
 - GitHub account
 - Render account (https://render.com)

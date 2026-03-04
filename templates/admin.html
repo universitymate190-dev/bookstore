@@ -181,6 +181,33 @@
         <!-- Files Tab -->
         <div id="files" class="tab-content">
             <h2>Manage Files</h2>
+            
+            <!-- File Upload Section -->
+            <div class="upload-section">
+                <h3>Upload New File</h3>
+                <form action="/upload" method="POST" enctype="multipart/form-data" class="upload-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="file_title">Title:</label>
+                            <input type="text" id="file_title" name="title" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="file_category">Category:</label>
+                            <select id="file_category" name="category" required>
+                                <option value="books">Books</option>
+                                <option value="notes">Notes</option>
+                                <option value="exams">Exams</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="file">File:</label>
+                        <input type="file" id="file" name="file" required accept=".pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx,.zip">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload File</button>
+                </form>
+            </div>
+            
             <table class="admin-table">
                 <thead>
                     <tr>
@@ -210,36 +237,57 @@
                     <label for="notification_message">Message:</label>
                     <textarea id="notification_message" name="message" rows="4" required placeholder="Notification message"></textarea>
                 </div>
+                <div class="form-group">
+                    <label for="expires_hours">Expiry Time (hours from now):</label>
+                    <input type="number" id="expires_hours" name="expires_hours" min="1" max="8760" value="12" placeholder="12">
+                    <small style="color: var(--text-secondary); display: block; margin-top: 0.25rem;">
+                        Set to 0 for notifications that never expire
+                    </small>
+                </div>
                 <button type="submit" class="btn btn-primary">Send to All Users</button>
             </form>
+            
+            <h3>Manage Existing Notifications</h3>
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Title</th>
+                        <th>Created</th>
+                        <th>Expires</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="notificationsTableBody">
+                    <!-- Notifications will be loaded dynamically -->
+                </tbody>
+            </table>
         </div>
 
         <!-- Notes Tab -->
         <div id="notes" class="tab-content">
-            <h2>Send Notes to Users</h2>
+            <h2>Send Notes to All Users</h2>
             <div class="send-note-section">
                 <h3>Send Note</h3>
                 <form action="/send-note" method="POST" class="send-note-form">
                     <div class="form-group">
-                        <label for="note_recipient">Recipient:</label>
-                        <select id="note_recipient" name="recipient_id" required>
-                            <option value="">Select a user...</option>
-                            {% for user in users %}
-                                {% if user.id != current_user.id %}
-                                    <option value="{{ user.id }}">{{ user.username }} ({{ user.email }})</option>
-                                {% endif %}
+                        <label for="note_title">Title:</label>
+                        <input type="text" id="note_title" name="title" required placeholder="Note title">
+                    </div>
+                    <div class="form-group">
+                        <label for="note_course">Course (optional):</label>
+                        <select id="note_course" name="course_id">
+                            <option value="">General Note (no specific course)</option>
+                            {% for course in courses %}
+                                <option value="{{ course.id }}">{{ course.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="note_title">Subject:</label>
-                        <input type="text" id="note_title" name="title" required placeholder="Note subject">
-                    </div>
-                    <div class="form-group">
-                        <label for="note_content">Message:</label>
+                        <label for="note_content">Content:</label>
                         <textarea id="note_content" name="content" rows="5" required placeholder="Type your note here..."></textarea>
                     </div>
-                    <button type="submit" class="btn btn-primary">Send Note</button>
+                    <button type="submit" class="btn btn-primary">Send to All Users</button>
                 </form>
             </div>
         </div>
@@ -266,6 +314,7 @@
             loadUsers();
             loadExams();
             loadFiles();
+            loadNotifications();
         });
 
         function showTab(tabName) {
@@ -286,6 +335,10 @@
                     const tbody = document.getElementById('usersTableBody');
                     tbody.innerHTML = '';
                     users.forEach(user => {
+                        const actions = user.role === 'admin' 
+                            ? `<button onclick="demoteUser(${user.id})" class="btn btn-small">Demote to User</button>`
+                            : `<button onclick="promoteUser(${user.id})" class="btn btn-small">Promote to Admin</button>`;
+                        
                         const row = `
                             <tr>
                                 <td>${user.id}</td>
@@ -293,7 +346,9 @@
                                 <td>${user.email}</td>
                                 <td>${user.role}</td>
                                 <td>
-                                    <button onclick="deleteUser(${user.id})" class="btn btn-small">Delete</button>
+                                    <button onclick="sendMessage(${user.id})" class="btn-icon" title="Send Private Message">💬</button>
+                                    ${actions}
+                                    <button onclick="deleteUser(${user.id})" class="btn btn-small btn-danger">Delete</button>
                                 </td>
                             </tr>
                         `;
@@ -352,10 +407,82 @@
                 });
         }
 
+        function loadNotifications() {
+            fetch('/api/admin/notifications')
+                .then(res => res.json())
+                .then(notifications => {
+                    const tbody = document.getElementById('notificationsTableBody');
+                    tbody.innerHTML = '';
+                    notifications.forEach(notification => {
+                        const createdDate = new Date(notification.created_at).toLocaleString();
+                        const expiresDate = notification.expires_at ? new Date(notification.expires_at).toLocaleString() : 'Never';
+                        const row = `
+                            <tr>
+                                <td>${notification.id}</td>
+                                <td>${notification.title}</td>
+                                <td>${createdDate}</td>
+                                <td>${expiresDate}</td>
+                                <td>
+                                    <button onclick="editNotificationExpiry(${notification.id})" class="btn btn-small" style="margin-right: 0.5rem;">
+                                        ✏️ Edit Expiry
+                                    </button>
+                                    <button onclick="deleteNotification(${notification.id})" class="btn btn-small btn-danger">
+                                        🗑️ Delete
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                        tbody.innerHTML += row;
+                    });
+                })
+                .catch(err => console.error('Error loading notifications:', err));
+        }
+
         function deleteUser(userId) {
-            if (confirm('Are you sure?')) {
+            if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
                 fetch(`/api/users/${userId}`, { method: 'DELETE' })
                     .then(() => loadUsers());
+            }
+        }
+
+        function promoteUser(userId) {
+            if (confirm('Are you sure you want to promote this user to admin?')) {
+                fetch(`/api/promote-user/${userId}`, { method: 'POST' })
+                    .then(() => loadUsers());
+            }
+        }
+
+        function demoteUser(userId) {
+            if (confirm('Are you sure you want to demote this admin to user?')) {
+                fetch(`/api/demote-user/${userId}`, { method: 'POST' })
+                    .then(() => loadUsers());
+            }
+        }
+
+        function sendMessage(userId) {
+            const message = prompt('Enter your private message to this user:');
+            if (message && message.trim()) {
+                fetch('/api/send-private-message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        message: message.trim()
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Message sent successfully!');
+                    } else {
+                        alert('Failed to send message: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert('Error sending message: ' + error);
+                });
             }
         }
 
@@ -370,6 +497,44 @@
             if (confirm('Are you sure?')) {
                 fetch(`/api/files/${fileId}`, { method: 'DELETE' })
                     .then(() => loadFiles());
+            }
+        }
+
+        function editNotificationExpiry(notificationId) {
+            const hours = prompt('Enter new expiry time in hours from now (0 = never expires):');
+            if (hours !== null) {
+                const hoursNum = parseInt(hours);
+                if (isNaN(hoursNum) || hoursNum < 0) {
+                    alert('Please enter a valid number of hours (0 or greater)');
+                    return;
+                }
+                
+                fetch(`/api/update-notification-expiry/${notificationId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ expires_hours: hoursNum })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Notification expiry updated successfully!');
+                        loadNotifications();
+                    } else {
+                        alert('Failed to update notification expiry: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert('Error updating notification expiry: ' + error);
+                });
+            }
+        }
+
+        function deleteNotification(notificationId) {
+            if (confirm('Are you sure you want to delete this notification? This will remove it from all users.')) {
+                fetch(`/api/delete-notification/${notificationId}`, { method: 'DELETE' })
+                    .then(() => loadNotifications());
             }
         }
     </script>

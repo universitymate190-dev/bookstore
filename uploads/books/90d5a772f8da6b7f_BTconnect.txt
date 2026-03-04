@@ -1,0 +1,11 @@
+bluetoothctl
+connect XX:XX:XX:XX:XX:XX
+exit
+
+
+pactl list cards short
+
+
+pactl set-card-profile bluez_card.41_42_A3_1C_F2_46 a2dp-sink
+
+

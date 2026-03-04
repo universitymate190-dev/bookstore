@@ -190,6 +190,26 @@ bookstore/
 - Implement progress tracking
 
 ---
+
+## 🔐 Admin Access
+
+**Default Admin Account:**
+- Email: shakesian6@gmail.com
+- Password: Casanova@1234
+
+**Admin Panel**: Available at `/admin` for authenticated admins
+
+**Key Admin Functions:**
+- Create/manage user accounts
+- Create and manage exams with questions
+- Send system notifications to all users
+- Send direct messages/notes to specific users
+- Upload and manage study files
+- Create courses
+- View all user activity
+
+---
+
 **Status**: ✅ **PRODUCTION READY**
 **Last Updated**: March 5, 2026
 **Version**: 1.0

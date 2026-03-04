@@ -136,6 +136,7 @@ def init_db():
         message TEXT NOT NULL,
         created_by INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP,
         is_read BOOLEAN DEFAULT FALSE
     )''')
     
@@ -166,9 +167,11 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         content TEXT NOT NULL,
+        course_id INTEGER,
         created_by INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (created_by) REFERENCES users(id)
+        FOREIGN KEY (created_by) REFERENCES users(id),
+        FOREIGN KEY (course_id) REFERENCES courses(id)
     )''')
     
     # User notes table (many-to-many relationship)
@@ -435,12 +438,12 @@ def notifications():
     conn = get_db()
     c = conn.cursor()
     
-    # Get user's notifications
+    # Get user's notifications (exclude expired ones)
     c.execute('''
         SELECT n.*, un.is_read, un.read_at
         FROM notifications n
         JOIN user_notifications un ON n.id = un.notification_id
-        WHERE un.user_id = ?
+        WHERE un.user_id = ? AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP)
         ORDER BY n.created_at DESC
     ''', (current_user.id,))
     user_notifications = c.fetchall()
@@ -477,17 +480,29 @@ def send_notification():
     
     title = request.form.get('title')
     message = request.form.get('message')
+    expires_hours = request.form.get('expires_hours', '12')
     
     if not title or not message:
         flash('Title and message are required', 'danger')
         return redirect(url_for('admin'))
     
+    # Handle expiry time
+    from datetime import datetime, timedelta
+    try:
+        expires_hours = int(expires_hours)
+        if expires_hours <= 0:
+            expires_at = None  # Never expires
+        else:
+            expires_at = datetime.now() + timedelta(hours=expires_hours)
+    except (ValueError, TypeError):
+        expires_at = datetime.now() + timedelta(hours=12)  # Default to 12 hours
+    
     conn = get_db()
     c = conn.cursor()
     
     # Create notification
-    c.execute('INSERT INTO notifications (title, message, created_by) VALUES (?, ?, ?)',
-              (title, message, current_user.id))
+    c.execute('INSERT INTO notifications (title, message, created_by, expires_at) VALUES (?, ?, ?, ?)',
+              (title, message, current_user.id, expires_at))
     notification_id = c.lastrowid
     
     # Send to all users
@@ -501,8 +516,46 @@ def send_notification():
     conn.commit()
     conn.close()
     
-    flash('Notification sent to all users', 'success')
+    if expires_at:
+        flash(f'Notification sent to all users (expires in {expires_hours} hours)', 'success')
+    else:
+        flash('Notification sent to all users (never expires)', 'success')
     return redirect(url_for('admin'))
+
+@app.route('/api/send-private-message', methods=['POST'])
+@login_required
+def send_private_message():
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Only administrators can send private messages'}), 403
+    
+    data = request.get_json()
+    user_id = data.get('user_id')
+    message = data.get('message')
+    
+    if not user_id or not message:
+        return jsonify({'success': False, 'message': 'User ID and message are required'}), 400
+    
+    # Check if user exists
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT id FROM users WHERE id = ?', (user_id,))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    
+    # Create private notification (no expiry for private messages)
+    c.execute('INSERT INTO notifications (title, message, created_by) VALUES (?, ?, ?)',
+              ('Private Message from Admin', message, current_user.id))
+    notification_id = c.lastrowid
+    
+    # Send to specific user
+    c.execute('INSERT INTO user_notifications (user_id, notification_id) VALUES (?, ?)',
+              (user_id, notification_id))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'Private message sent successfully'})
 
 @app.route('/upload-profile-picture', methods=['POST'])
 @login_required
@@ -582,6 +635,34 @@ def create_course():
     flash('Course created successfully', 'success')
     return redirect(url_for('courses'))
 
+@app.route('/delete-course/<int:course_id>', methods=['POST'])
+@login_required
+def delete_course(course_id):
+    if current_user.role != 'admin':
+        flash('Only administrators can delete courses', 'danger')
+        return redirect(url_for('courses'))
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if course exists
+    c.execute('SELECT id FROM courses WHERE id = ?', (course_id,))
+    if not c.fetchone():
+        conn.close()
+        flash('Course not found', 'danger')
+        return redirect(url_for('courses'))
+    
+    # Update associated notes to remove course association (set course_id to NULL)
+    c.execute('UPDATE notes SET course_id = NULL WHERE course_id = ?', (course_id,))
+    
+    # Delete course
+    c.execute('DELETE FROM courses WHERE id = ?', (course_id,))
+    conn.commit()
+    conn.close()
+    
+    flash('Course deleted successfully. Associated notes have been updated to remove course association.', 'success')
+    return redirect(url_for('courses'))
+
 @app.route('/send-note', methods=['POST'])
 @login_required
 def send_note():
@@ -591,6 +672,7 @@ def send_note():
     
     title = request.form.get('title')
     content = request.form.get('content')
+    course_id = request.form.get('course_id')
     
     if not title or not content:
         flash('Title and content are required', 'danger')
@@ -600,8 +682,8 @@ def send_note():
     c = conn.cursor()
     
     # Create note
-    c.execute('INSERT INTO notes (title, content, created_by) VALUES (?, ?, ?)',
-              (title, content, current_user.id))
+    c.execute('INSERT INTO notes (title, content, course_id, created_by) VALUES (?, ?, ?, ?)',
+              (title, content, course_id if course_id else None, current_user.id))
     note_id = c.lastrowid
     
     # Send to all users
@@ -624,11 +706,12 @@ def notes():
     conn = get_db()
     c = conn.cursor()
     
-    # Get user's notes
+    # Get user's notes with course information
     c.execute('''
-        SELECT n.*, un.is_read
+        SELECT n.*, un.is_read, c.name as course_name
         FROM notes n
         JOIN user_notes un ON n.id = un.note_id
+        LEFT JOIN courses c ON n.course_id = c.id
         WHERE un.user_id = ?
         ORDER BY n.created_at DESC
     ''', (current_user.id,))
@@ -648,6 +731,34 @@ def notes():
     conn.close()
     
     return render_template('notes.html', notes=notes_list)
+
+@app.route('/delete-note/<int:note_id>', methods=['POST'])
+@login_required
+def delete_note(note_id):
+    if current_user.role != 'admin':
+        flash('Only administrators can delete notes', 'danger')
+        return redirect(url_for('notes'))
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if note exists
+    c.execute('SELECT id FROM notes WHERE id = ?', (note_id,))
+    if not c.fetchone():
+        conn.close()
+        flash('Note not found', 'danger')
+        return redirect(url_for('notes'))
+    
+    # Delete from user_notes first (due to foreign key constraint)
+    c.execute('DELETE FROM user_notes WHERE note_id = ?', (note_id,))
+    
+    # Delete the note
+    c.execute('DELETE FROM notes WHERE id = ?', (note_id,))
+    conn.commit()
+    conn.close()
+    
+    flash('Note deleted successfully', 'success')
+    return redirect(url_for('notes'))
 
 @app.route('/admin-add-user', methods=['POST'])
 @login_required
@@ -766,17 +877,19 @@ def search():
                          files=files, 
                          courses=courses_list)
 
-@app.route('/api/notifications/unread-count')
+@app.route('/api/admin/notifications')
 @login_required
-def get_unread_notifications():
+def api_admin_notifications():
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
     conn = get_db()
     c = conn.cursor()
-    c.execute('SELECT COUNT(*) as unread FROM user_notifications WHERE user_id = ? AND is_read = FALSE',
-              (current_user.id,))
-    unread_count = c.fetchone()['unread']
+    c.execute('SELECT * FROM notifications ORDER BY created_at DESC')
+    notifications = c.fetchall()
     conn.close()
     
-    return jsonify({'unread_count': unread_count})
+    return jsonify([dict(n) for n in notifications])
 
 @app.route('/privacy')
 def privacy():
@@ -870,6 +983,16 @@ def take_exam(exam_id):
         flash('Exam not found', 'danger')
         return redirect(url_for('exams'))
     
+    # Check if exam has expired (time limit has passed since creation)
+    from datetime import datetime, timedelta
+    exam_created = parse_datetime(exam['created_at'])
+    time_limit_minutes = exam['time_limit']
+    expiry_time = exam_created + timedelta(minutes=time_limit_minutes)
+    
+    if datetime.now() > expiry_time:
+        flash('This exam has expired and is no longer available.', 'danger')
+        return redirect(url_for('exams'))
+    
     return render_template('exam.html', exam=exam)
 
 @app.route('/submit-exam', methods=['POST'])
@@ -938,7 +1061,20 @@ def admin():
         flash('Access denied. Admin access required.', 'danger')
         return redirect(url_for('dashboard'))
     
-    return render_template('admin.html')
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Get all users for admin management
+    c.execute('SELECT id, username, email, role FROM users ORDER BY username')
+    users = c.fetchall()
+    
+    # Get all courses for note assignment
+    c.execute('SELECT id, name FROM courses ORDER BY name')
+    courses = c.fetchall()
+    
+    conn.close()
+    
+    return render_template('admin.html', users=users, courses=courses)
 
 @app.route('/logout')
 @login_required
@@ -1062,6 +1198,93 @@ def delete_file(file_id):
     conn.close()
     
     return jsonify({'success': True})
+
+@app.route('/api/promote-user/<int:user_id>', methods=['POST'])
+@login_required
+def promote_user(user_id):
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('UPDATE users SET role = ? WHERE id = ?', ('admin', user_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/demote-user/<int:user_id>', methods=['POST'])
+@login_required
+def demote_user(user_id):
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Don't allow demoting yourself
+    if user_id == current_user.id:
+        return jsonify({'error': 'Cannot demote yourself'}), 400
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('UPDATE users SET role = ? WHERE id = ?', ('user', user_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/delete-notification/<int:notification_id>', methods=['DELETE'])
+@login_required
+def delete_notification(notification_id):
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    conn = get_db()
+    c = conn.cursor()
+    # Delete from user_notifications first (foreign key constraint)
+    c.execute('DELETE FROM user_notifications WHERE notification_id = ?', (notification_id,))
+    c.execute('DELETE FROM notifications WHERE id = ?', (notification_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/update-notification-expiry/<int:notification_id>', methods=['POST'])
+@login_required
+def update_notification_expiry(notification_id):
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Only administrators can update notification expiry'}), 403
+    
+    data = request.get_json()
+    expires_hours = data.get('expires_hours')
+    
+    if expires_hours is None:
+        return jsonify({'success': False, 'message': 'expires_hours is required'}), 400
+    
+    # Check if notification exists
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT id FROM notifications WHERE id = ?', (notification_id,))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({'success': False, 'message': 'Notification not found'}), 404
+    
+    # Calculate new expiry time
+    from datetime import datetime, timedelta
+    try:
+        expires_hours = int(expires_hours)
+        if expires_hours <= 0:
+            expires_at = None  # Never expires
+        else:
+            expires_at = datetime.now() + timedelta(hours=expires_hours)
+    except (ValueError, TypeError):
+        conn.close()
+        return jsonify({'success': False, 'message': 'Invalid expires_hours value'}), 400
+    
+    # Update notification expiry
+    c.execute('UPDATE notifications SET expires_at = ? WHERE id = ?', (expires_at, notification_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'Notification expiry updated successfully'})
 
 @app.route('/download/<int:file_id>')
 @login_required

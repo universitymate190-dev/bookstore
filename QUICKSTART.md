@@ -6,7 +6,14 @@
 cd /home/shakes/Desktop/bookstore && bash setup.sh && python app.py
 ```
 
-## 📊 Project Complete ✅
+## � Admin Credentials
+
+**Email**: shakesian6@gmail.com  
+**Password**: Casanova@1234
+
+⚠️ **Security Note**: Change password after first login in production!
+
+## �📊 Project Complete ✅
 
 Your **Books, Files, Notes, CATs & Exams Website** is ready!
 

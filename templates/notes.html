@@ -73,7 +73,15 @@
                     <div class="note-card">
                         <div class="note-header">
                             <h3>{{ note.title }}</h3>
+                            {% if note.course_name %}
+                                <span class="note-course">📚 Course: {{ note.course_name }}</span>
+                            {% endif %}
                             <span class="note-date">{{ note.created_at.strftime('%B %d, %Y at %I:%M %p') if note.created_at else 'N/A' }}</span>
+                            {% if current_user.role == 'admin' %}
+                            <form action="/delete-note/{{ note.id }}" method="POST" class="delete-note-form" onsubmit="return confirm('Are you sure you want to delete this note?')">
+                                <button type="submit" class="btn-delete-note" title="Delete Note">🗑️</button>
+                            </form>
+                            {% endif %}
                         </div>
                         <div class="note-content">
                             <p>{{ note.content }}</p>
