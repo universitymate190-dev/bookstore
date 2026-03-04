@@ -135,6 +135,11 @@
     <nav class="navbar">
         <div class="container">
             <div class="logo">📚 Bookstore</div>
+            <button class="hamburger-menu" onclick="toggleSidebar()">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
             <ul class="nav-links">
                 <li><a href="/">Home</a></li>
                 <li><a href="/library">Library</a></li>
@@ -154,6 +159,34 @@
             </ul>
         </div>
     </nav>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+    <aside id="sidebar" class="sidebar">
+        <ul class="sidebar-links">
+            <li><a href="/">Home</a></li>
+            <li><a href="/library">Library</a></li>
+            <li><a href="/exams">Exams</a></li>
+            <li><a href="/courses">Courses</a></li>
+            <li><a href="/search">Search</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+            {% if current_user.is_authenticated %}
+                <li><a href="/dashboard">Dashboard</a></li>
+                <li><a href="/profile">Profile</a></li>
+                <li><a href="/groups">Groups</a></li>
+                <li><a href="/notes">Notes</a></li>
+                <li><a href="/notifications">Notifications</a></li>
+                {% if current_user.role == 'admin' %}
+                    <li><a href="/admin">Admin Panel</a></li>
+                {% endif %}
+                <li><a href="/logout">Logout</a></li>
+            {% else %}
+                <li><a href="/login">Login</a></li>
+                <li><a href="/signup">Sign Up</a></li>
+            {% endif %}
+        </ul>
+    </aside>
+
 
     <div class="file-viewer">
         <div class="file-header">

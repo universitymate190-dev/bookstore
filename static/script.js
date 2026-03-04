@@ -1,3 +1,42 @@
+// Sidebar Navigation
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const hamburger = document.querySelector('.hamburger-menu');
+    
+    if (sidebar) {
+        sidebar.classList.toggle('active');
+        overlay?.classList.toggle('active');
+        hamburger?.classList.toggle('active');
+    }
+}
+
+function closeSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const hamburger = document.querySelector('.hamburger-menu');
+    
+    if (sidebar) {
+        sidebar.classList.remove('active');
+        overlay?.classList.remove('active');
+        hamburger?.classList.remove('active');
+    }
+}
+
+// Close sidebar when a link is clicked
+document.addEventListener('DOMContentLoaded', function() {
+    const sidebarLinks = document.querySelectorAll('.sidebar-links a');
+    sidebarLinks.forEach(link => {
+        link.addEventListener('click', closeSidebar);
+    });
+    
+    // Close sidebar when overlay is clicked
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay) {
+        overlay.addEventListener('click', closeSidebar);
+    }
+});
+
 // Dark Mode Toggle
 function toggleDarkMode() {
     const html = document.documentElement;

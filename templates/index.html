@@ -8,14 +8,14 @@
 </head>
 <body>
     <nav class="navbar">
-        <div class="navbar-container">
+        <div class="container">
             <div class="logo">📚 Bookstore</div>
-            <button class="hamburger" id="hamburger" aria-label="Toggle menu">
+            <button class="hamburger-menu" onclick="toggleSidebar()">
                 <span></span>
                 <span></span>
                 <span></span>
             </button>
-            <ul class="nav-links" id="navLinks">
+            <ul class="nav-links">
                 <li><a href="/">Home</a></li>
                 <li><a href="/library">Library</a></li>
                 <li><a href="/exams">Exams</a></li>
@@ -34,6 +34,33 @@
             </ul>
         </div>
     </nav>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+    <aside id="sidebar" class="sidebar">
+        <ul class="sidebar-links">
+            <li><a href="/">Home</a></li>
+            <li><a href="/library">Library</a></li>
+            <li><a href="/exams">Exams</a></li>
+            <li><a href="/courses">Courses</a></li>
+            <li><a href="/search">Search</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+            {% if not current_user.is_authenticated %}
+                <li><a href="/login">Login</a></li>
+                <li><a href="/signup">Sign Up</a></li>
+            {% else %}
+                <li><a href="/dashboard">Dashboard</a></li>
+                <li><a href="/profile">Profile</a></li>
+                <li><a href="/groups">Groups</a></li>
+                <li><a href="/notes">Notes</a></li>
+                <li><a href="/notifications">Notifications</a></li>
+                {% if current_user.role == 'admin' %}
+                    <li><a href="/admin">Admin Panel</a></li>
+                {% endif %}
+                <li><a href="/logout">Logout</a></li>
+            {% endif %}
+        </ul>
+    </aside>
 
     <section class="hero">
         <div class="container">
@@ -89,35 +116,6 @@
             </div>
         </div>
     </footer>
-
-    <script>
-        // Hamburger menu functionality
-        const hamburger = document.getElementById('hamburger');
-        const navLinks = document.getElementById('navLinks');
-
-        if (hamburger) {
-            hamburger.addEventListener('click', () => {
-                navLinks.classList.toggle('active');
-                hamburger.classList.toggle('active');
-            });
-
-            // Close menu when a link is clicked
-            document.querySelectorAll('.nav-links a').forEach(link => {
-                link.addEventListener('click', () => {
-                    navLinks.classList.remove('active');
-                    hamburger.classList.remove('active');
-                });
-            });
-
-            // Close menu when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.navbar')) {
-                    navLinks.classList.remove('active');
-                    hamburger.classList.remove('active');
-                }
-            });
-        }
-    </script>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>

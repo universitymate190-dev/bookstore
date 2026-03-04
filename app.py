@@ -185,34 +185,6 @@ def init_db():
     
     conn.commit()
     conn.close()
-    
-    # Run migrations
-    migrate_db()
-
-def migrate_db():
-    """Apply database migrations if needed"""
-    conn = get_db()
-    c = conn.cursor()
-    
-    try:
-        # Check if profile_picture column exists in users table
-        c.execute("PRAGMA table_info(users)")
-        columns = [row[1] for row in c.fetchall()]
-        
-        if 'profile_picture' not in columns:
-            c.execute('ALTER TABLE users ADD COLUMN profile_picture TEXT')
-            conn.commit()
-        
-        if 'duration' not in [row[1] for row in c.execute("PRAGMA table_info(exams)").fetchall()]:
-            c.execute('ALTER TABLE exams ADD COLUMN duration INTEGER DEFAULT 60')
-            c.execute('ALTER TABLE exams ADD COLUMN total_questions INTEGER DEFAULT 0')
-            c.execute('ALTER TABLE exams ADD COLUMN passing_marks INTEGER DEFAULT 0')
-            c.execute('ALTER TABLE exams ADD COLUMN description TEXT')
-            conn.commit()
-    except Exception as e:
-        print(f"Migration note: {e}")
-    
-    conn.close()
 
 # User Model
 class User(UserMixin):

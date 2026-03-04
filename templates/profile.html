@@ -8,14 +8,14 @@
 </head>
 <body>
     <nav class="navbar">
-        <div class="navbar-container">
+        <div class="container">
             <div class="logo">📚 Bookstore</div>
-            <button class="hamburger" id="hamburger" aria-label="Toggle menu">
+            <button class="hamburger-menu" onclick="toggleSidebar()">
                 <span></span>
                 <span></span>
                 <span></span>
             </button>
-            <ul class="nav-links" id="navLinks">
+            <ul class="nav-links">
                 <li><a href="/">Home</a></li>
                 <li><a href="/library">Library</a></li>
                 <li><a href="/exams">Exams</a></li>
@@ -34,6 +34,25 @@
             </ul>
         </div>
     </nav>
+
+    <!-- Sidebar Navigation -->
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+    <aside id="sidebar" class="sidebar">
+        <ul class="sidebar-links">
+            <li><a href="/">Home</a></li>
+            <li><a href="/library">Library</a></li>
+            <li><a href="/exams">Exams</a></li>
+            <li><a href="/courses">Courses</a></li>
+            <li><a href="/dashboard">Dashboard</a></li>
+            <li><a href="/profile">Profile</a></li>
+            <li><a href="/groups">Groups</a></li>
+            <li><a href="/notes">Notes</a></li>
+            <li><a href="/search">Search</a></li>
+            <li><a href="/notifications">Notifications</a></li>
+            <li><a href="/privacy">Privacy Policy</a></li>
+            <li><a href="/logout">Logout</a></li>
+        </ul>
+    </aside>
 
     <div class="container">
         <div class="profile-section">
