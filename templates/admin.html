@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Bookstore</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">📚 Bookstore</div>
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/library">Library</a></li>
+                <li><a href="/exams">Exams</a></li>
+                <li><a href="/courses">Courses</a></li>
+                <li><a href="/dashboard">Dashboard</a></li>
+                <li><a href="/profile">Profile</a></li>
+                <li><a href="/groups">Groups</a></li>
+                <li><a href="/notes">Notes</a></li>
+                <li><a href="/search">Search</a></li>
+                <li><a href="/notifications" class="notification-link">
+                    <span class="notification-bell">🔔</span>
+                    <span class="notification-count" id="notificationCount" style="display: none;"></span>
+                </a></li>
+                <li><a href="/privacy">Privacy Policy</a></li>
+                <li><a href="/logout" class="logout-btn">Logout</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container admin-container">
+        <h1>Admin Panel</h1>
+
+        <div class="admin-tabs">
+            <button class="tab-btn active" onclick="showTab('users')">Users</button>
+            <button class="tab-btn" onclick="showTab('exams')">Exams</button>
+            <button class="tab-btn" onclick="showTab('files')">Files</button>
+            <button class="tab-btn" onclick="showTab('notifications')">Notifications</button>
+            <button class="tab-btn" onclick="showTab('notes')">Notes</button>
+        </div>
+
+        <!-- Users Tab -->
+        <div id="users" class="tab-content active">
+            <h2>Manage Users</h2>
+            <div class="add-user-section">
+                <h3>Add New User</h3>
+                <form action="/admin-add-user" method="POST" class="add-user-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="username">Username:</label>
+                            <input type="text" id="username" name="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="email">Email:</label>
+                            <input type="email" id="email" name="email" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="password">Password:</label>
+                            <input type="password" id="password" name="password" required minlength="6">
+                        </div>
+                        <div class="form-group">
+                            <label for="role">Role:</label>
+                            <select id="role" name="role">
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Create User</button>
+                </form>
+            </div>
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                    <!-- Users will be loaded dynamically -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Exams Tab -->
+        <div id="exams" class="tab-content">
+            <h2>Manage Exams</h2>
+            
+            <div class="add-exam-section">
+                <h3>Create New Exam</h3>
+                <form action="/admin-create-exam" method="POST" class="add-exam-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="exam_title">Exam Title:</label>
+                            <input type="text" id="exam_title" name="exam_title" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="exam_subject">Subject:</label>
+                            <input type="text" id="exam_subject" name="exam_subject" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="exam_duration">Duration (minutes):</label>
+                            <input type="number" id="exam_duration" name="exam_duration" min="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="exam_total_questions">Total Questions:</label>
+                            <input type="number" id="exam_total_questions" name="exam_total_questions" min="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="exam_passing_marks">Passing Marks:</label>
+                            <input type="number" id="exam_passing_marks" name="exam_passing_marks" min="1" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="exam_description">Description (optional):</label>
+                        <textarea id="exam_description" name="exam_description" rows="3" placeholder="Exam description..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Create Exam</button>
+                </form>
+            </div>
+            
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Title</th>
+                        <th>Subject</th>
+                        <th>Time Limit</th>
+                        <th>Questions</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="examsTableBody">
+                    <!-- Exams will be loaded dynamically -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Files Tab -->
+        <div id="files" class="tab-content">
+            <h2>Manage Files</h2>
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Title</th>
+                        <th>Category</th>
+                        <th>Uploaded By</th>
+                        <th>Upload Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="filesTableBody">
+                    <!-- Files will be loaded dynamically -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Notifications Tab -->
+        <div id="notifications" class="tab-content">
+            <h2>Send Notifications</h2>
+            <form action="/send-notification" method="POST" class="notification-form">
+                <div class="form-group">
+                    <label for="notification_title">Title:</label>
+                    <input type="text" id="notification_title" name="title" required placeholder="Notification title">
+                </div>
+                <div class="form-group">
+                    <label for="notification_message">Message:</label>
+                    <textarea id="notification_message" name="message" rows="4" required placeholder="Notification message"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Send to All Users</button>
+            </form>
+        </div>
+
+        <!-- Notes Tab -->
+        <div id="notes" class="tab-content">
+            <h2>Send Notes to Users</h2>
+            <div class="send-note-section">
+                <h3>Send Note</h3>
+                <form action="/send-note" method="POST" class="send-note-form">
+                    <div class="form-group">
+                        <label for="note_recipient">Recipient:</label>
+                        <select id="note_recipient" name="recipient_id" required>
+                            <option value="">Select a user...</option>
+                            {% for user in users %}
+                                {% if user.id != current_user.id %}
+                                    <option value="{{ user.id }}">{{ user.username }} ({{ user.email }})</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="note_title">Subject:</label>
+                        <input type="text" id="note_title" name="title" required placeholder="Note subject">
+                    </div>
+                    <div class="form-group">
+                        <label for="note_content">Message:</label>
+                        <textarea id="note_content" name="content" rows="5" required placeholder="Type your note here..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Send Note</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>Contact Information</h4>
+                    <p>Phone: +254702060628</p>
+                    <p>Email: shakesian6@gmail.com</p>
+                </div>
+                <div class="footer-section">
+                    <p>&copy; 2026 Bookstore. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUsers();
+            loadExams();
+            loadFiles();
+        });
+
+        function showTab(tabName) {
+            const contents = document.querySelectorAll('.tab-content');
+            const buttons = document.querySelectorAll('.tab-btn');
+            
+            contents.forEach(c => c.classList.remove('active'));
+            buttons.forEach(b => b.classList.remove('active'));
+            
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function loadUsers() {
+            fetch('/api/users')
+                .then(res => res.json())
+                .then(users => {
+                    const tbody = document.getElementById('usersTableBody');
+                    tbody.innerHTML = '';
+                    users.forEach(user => {
+                        const row = `
+                            <tr>
+                                <td>${user.id}</td>
+                                <td>${user.username}</td>
+                                <td>${user.email}</td>
+                                <td>${user.role}</td>
+                                <td>
+                                    <button onclick="deleteUser(${user.id})" class="btn btn-small">Delete</button>
+                                </td>
+                            </tr>
+                        `;
+                        tbody.innerHTML += row;
+                    });
+                });
+        }
+
+        function loadExams() {
+            fetch('/api/exams')
+                .then(res => res.json())
+                .then(exams => {
+                    const tbody = document.getElementById('examsTableBody');
+                    tbody.innerHTML = '';
+                    exams.forEach(exam => {
+                        const row = `
+                            <tr>
+                                <td>${exam.id}</td>
+                                <td>${exam.title}</td>
+                                <td>${exam.subject}</td>
+                                <td>${exam.time_limit}</td>
+                                <td>${exam.question_count}</td>
+                                <td>
+                                    <button onclick="editExam(${exam.id})" class="btn btn-small">Edit</button>
+                                    <button onclick="deleteExam(${exam.id})" class="btn btn-small">Delete</button>
+                                </td>
+                            </tr>
+                        `;
+                        tbody.innerHTML += row;
+                    });
+                });
+        }
+
+        function loadFiles() {
+            fetch('/api/files')
+                .then(res => res.json())
+                .then(files => {
+                    const tbody = document.getElementById('filesTableBody');
+                    tbody.innerHTML = '';
+                    files.forEach(file => {
+                        const uploadDate = new Date(file.created_at).toLocaleDateString();
+                        const row = `
+                            <tr>
+                                <td>${file.id}</td>
+                                <td>${file.title}</td>
+                                <td>${file.category}</td>
+                                <td>${file.uploader_username} (${file.uploader_email})</td>
+                                <td>${uploadDate}</td>
+                                <td>
+                                    <button onclick="deleteFile(${file.id})" class="btn btn-small">Delete</button>
+                                </td>
+                            </tr>
+                        `;
+                        tbody.innerHTML += row;
+                    });
+                });
+        }
+
+        function deleteUser(userId) {
+            if (confirm('Are you sure?')) {
+                fetch(`/api/users/${userId}`, { method: 'DELETE' })
+                    .then(() => loadUsers());
+            }
+        }
+
+        function deleteExam(examId) {
+            if (confirm('Are you sure?')) {
+                fetch(`/api/exams/${examId}`, { method: 'DELETE' })
+                    .then(() => loadExams());
+            }
+        }
+
+        function deleteFile(fileId) {
+            if (confirm('Are you sure?')) {
+                fetch(`/api/files/${fileId}`, { method: 'DELETE' })
+                    .then(() => loadFiles());
+            }
+        }
+    </script>
+</body>
+</html>

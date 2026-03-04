@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ file.title }} - Bookstore</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .file-viewer {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .file-header {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .uploader-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-right: 1rem;
+        }
+
+        .file-details h1 {
+            margin: 0 0 0.5rem 0;
+            color: var(--text);
+        }
+
+        .file-meta {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .file-content {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow-x: auto;
+        }
+
+        .text-content {
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            line-height: 1.5;
+            background: var(--bg);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .pdf-viewer {
+            width: 100%;
+            height: 600px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .unsupported-file {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .download-btn {
+            background: var(--primary);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 500;
+            transition: background 0.3s ease;
+        }
+
+        .download-btn:hover {
+            background: var(--primary-dark);
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            .file-viewer {
+                padding: 0 1rem;
+            }
+
+            .file-info {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .uploader-avatar {
+                margin-right: 0;
+                margin-bottom: 1rem;
+            }
+
+            .file-actions {
+                flex-direction: column;
+            }
+
+            .pdf-viewer {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">📚 Bookstore</div>
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/library">Library</a></li>
+                <li><a href="/exams">Exams</a></li>
+                <li><a href="/courses">Courses</a></li>
+                <li><a href="/dashboard">Dashboard</a></li>
+                <li><a href="/profile">Profile</a></li>
+                <li><a href="/groups">Groups</a></li>
+                <li><a href="/notes">Notes</a></li>
+                <li><a href="/search">Search</a></li>
+                <li><a href="/notifications" class="notification-link">
+                    <span class="notification-bell">🔔</span>
+                    <span class="notification-count" id="notificationCount" style="display: none;"></span>
+                </a></li>
+                <li><a href="/privacy">Privacy Policy</a></li>
+                <li><a href="/logout" class="logout-btn">Logout</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="file-viewer">
+        <div class="file-header">
+            <div class="file-info">
+                <div class="uploader-avatar">
+                    {{ file.uploader_username[0].upper() }}
+                </div>
+                <div class="file-details">
+                    <h1>{{ file.title }}</h1>
+                    <div class="file-meta">
+                        <p>Uploaded by: <strong>{{ file.uploader_username }}</strong> ({{ file.uploader_email }})</p>
+                        <p>Category: {{ file.category.title() }} | Uploaded: {{ file.created_at.strftime('%B %d, %Y at %I:%M %p') if file.created_at else 'N/A' }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="file-actions">
+                <a href="/download/{{ file.id }}" class="download-btn">
+                    📥 Download File
+                </a>
+                <a href="/library" class="btn btn-outline">← Back to Library</a>
+            </div>
+        </div>
+
+        <div class="file-content">
+            {% if file_ext in ['txt', 'md', 'py', 'js', 'html', 'css', 'json'] %}
+                <div class="text-content">{{ file_content }}</div>
+            {% elif file_ext == 'pdf' %}
+                <iframe src="/download/{{ file.id }}" class="pdf-viewer" type="application/pdf">
+                    <p>Your browser does not support PDFs. <a href="/download/{{ file.id }}">Download the PDF</a> to view it.</p>
+                </iframe>
+            {% else %}
+                <div class="unsupported-file">
+                    <h3>📄 File Preview Not Available</h3>
+                    <p>This file type ({{ file_ext }}) cannot be previewed in the browser.</p>
+                    <p>Please <a href="/download/{{ file.id }}">download the file</a> to view its contents.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>Contact Information</h4>
+                    <p>Phone: +254702060628</p>
+                    <p>Email: shakesian6@gmail.com</p>
+                </div>
+                <div class="footer-section">
+                    <p>&copy; 2026 Bookstore. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

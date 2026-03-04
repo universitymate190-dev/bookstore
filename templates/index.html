@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookstore - Books, Files, Notes & Exams</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="logo">📚 Bookstore</div>
+            <button class="hamburger" id="hamburger" aria-label="Toggle menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <ul class="nav-links" id="navLinks">
+                <li><a href="/">Home</a></li>
+                <li><a href="/library">Library</a></li>
+                <li><a href="/exams">Exams</a></li>
+                <li><a href="/courses">Courses</a></li>
+                <li><a href="/search">Search</a></li>
+                <li><a href="/privacy">Privacy Policy</a></li>
+                {% if not current_user.is_authenticated %}
+                    <li><a href="/login" class="login-btn">Login</a></li>
+                    <li><a href="/signup" class="signup-btn">Sign Up</a></li>
+                {% else %}
+                    <li><a href="/dashboard">Dashboard</a></li>
+                    <li><a href="/profile">Profile</a></li>
+                    <li><a href="/notes">Notes</a></li>
+                    <li><a href="/logout" class="logout-btn">Logout</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="container">
+            <h1>Welcome to Bookstore</h1>
+            <p>Your One-Stop Solution for Books, Notes, CATs & Exams</p>
+            {% if not current_user.is_authenticated %}
+                <a href="/signup" class="btn btn-primary">Get Started</a>
+            {% else %}
+                <a href="/dashboard" class="btn btn-primary">Go to Dashboard</a>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="features">
+        <div class="container">
+            <h2>Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📖</div>
+                    <h3>Books Library</h3>
+                    <p>Access thousands of books across various categories</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📝</div>
+                    <h3>Notes & Files</h3>
+                    <p>Upload and download study notes and educational files</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>CATs & Exams</h3>
+                    <p>Take online exams with instant results and detailed analysis</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🏆</div>
+                    <h3>Leaderboard</h3>
+                    <p>Compete with other learners and track your progress</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>Contact Information</h4>
+                    <p>Phone: +254702060628</p>
+                    <p>Email: shakesian6@gmail.com</p>
+                </div>
+                <div class="footer-section">
+                    <p>&copy; 2026 Bookstore. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Hamburger menu functionality
+        const hamburger = document.getElementById('hamburger');
+        const navLinks = document.getElementById('navLinks');
+
+        if (hamburger) {
+            hamburger.addEventListener('click', () => {
+                navLinks.classList.toggle('active');
+                hamburger.classList.toggle('active');
+            });
+
+            // Close menu when a link is clicked
+            document.querySelectorAll('.nav-links a').forEach(link => {
+                link.addEventListener('click', () => {
+                    navLinks.classList.remove('active');
+                    hamburger.classList.remove('active');
+                });
+            });
+
+            // Close menu when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.navbar')) {
+                    navLinks.classList.remove('active');
+                    hamburger.classList.remove('active');
+                }
+            });
+        }
+    </script>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Take Exam - Bookstore</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">📚 Bookstore</div>
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/library">Library</a></li>
+                <li><a href="/exams">Exams</a></li>
+                <li><a href="/courses">Courses</a></li>
+                <li><a href="/dashboard">Dashboard</a></li>
+                <li><a href="/profile">Profile</a></li>
+                <li><a href="/groups">Groups</a></li>
+                <li><a href="/notes">Notes</a></li>
+                <li><a href="/search">Search</a></li>
+                <li><a href="/notifications" class="notification-link">
+                    <span class="notification-bell">🔔</span>
+                    <span class="notification-count" id="notificationCount" style="display: none;"></span>
+                </a></li>
+                <li><a href="/privacy">Privacy Policy</a></li>
+                <li><a href="/logout" class="logout-btn">Logout</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container exam-container">
+        <div class="exam-header">
+            <h1 id="examTitle">{{ exam.title }}</h1>
+            <div class="timer" id="timer">
+                Time: <span id="timeLeft">{{ exam.time_limit }}:00</span>
+            </div>
+        </div>
+
+        <form id="examForm" method="POST" action="/submit-exam">
+            <input type="hidden" name="exam_id" value="{{ exam.id }}">
+            
+            <div class="questions-container" id="questionsContainer">
+                <!-- Questions will be loaded dynamically -->
+            </div>
+
+            <button type="submit" class="login-btn submit-btn">Submit Exam</button>
+        </form>
+    </div>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>Contact Information</h4>
+                    <p>Phone: +254702060628</p>
+                    <p>Email: shakesian6@gmail.com</p>
+                </div>
+                <div class="footer-section">
+                    <p>&copy; 2026 Bookstore. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        let examId = {{ exam.id }};
+        let timeLimit = {{ exam.time_limit }} * 60;
+        let timeRemaining = timeLimit;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadQuestions(examId);
+            startTimer();
+        });
+
+        function loadQuestions(examId) {
+            fetch(`/api/questions/${examId}`)
+                .then(res => res.json())
+                .then(questions => displayQuestions(questions))
+                .catch(err => console.error('Error loading questions:', err));
+        }
+
+        function displayQuestions(questions) {
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = '';
+
+            questions.forEach((q, index) => {
+                const questionDiv = document.createElement('div');
+                questionDiv.className = 'question-card';
+                questionDiv.innerHTML = `
+                    <h3>Question ${index + 1}</h3>
+                    <p>${q.question}</p>
+                    <div class="options">
+                        <label>
+                            <input type="radio" name="q_${q.id}" value="A" required>
+                            A) ${q.optionA}
+                        </label>
+                        <label>
+                            <input type="radio" name="q_${q.id}" value="B">
+                            B) ${q.optionB}
+                        </label>
+                        <label>
+                            <input type="radio" name="q_${q.id}" value="C">
+                            C) ${q.optionC}
+                        </label>
+                        <label>
+                            <input type="radio" name="q_${q.id}" value="D">
+                            D) ${q.optionD}
+                        </label>
+                    </div>
+                `;
+                container.appendChild(questionDiv);
+            });
+        }
+
+        function startTimer() {
+            const timerInterval = setInterval(() => {
+                timeRemaining--;
+                const minutes = Math.floor(timeRemaining / 60);
+                const seconds = timeRemaining % 60;
+                document.getElementById('timeLeft').textContent = 
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+                if (timeRemaining <= 0) {
+                    clearInterval(timerInterval);
+                    document.getElementById('examForm').submit();
+                }
+            }, 1000);
+        }
+
+        document.getElementById('examForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            submitExam();
+        });
+
+        function submitExam() {
+            const formData = new FormData(document.getElementById('examForm'));
+            fetch('/submit-exam', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(`Exam submitted! Your score: ${data.score}/${data.total}`);
+                window.location.href = `/results/${data.result_id}`;
+            })
+            .catch(err => console.error('Error submitting exam:', err));
+        }
+    </script>
+</body>
+</html>

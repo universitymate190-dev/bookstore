@@ -1,0 +1,279 @@
+// Dark Mode Toggle
+function toggleDarkMode() {
+    const html = document.documentElement;
+    const isDark = html.getAttribute('data-theme') === 'dark';
+    
+    if (isDark) {
+        html.removeAttribute('data-theme');
+        localStorage.setItem('theme', 'light');
+    } else {
+        html.setAttribute('data-theme', 'dark');
+        localStorage.setItem('theme', 'dark');
+    }
+}
+
+// Load saved theme on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    }
+});
+
+// Form Validation
+function validateEmail(email) {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+}
+
+function validatePassword(password) {
+    return password.length >= 6;
+}
+
+// Login Form Validation
+const loginForm = document.getElementById('loginForm');
+if (loginForm) {
+    loginForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!username || !password) {
+            alert('Please fill in all fields');
+            return;
+        }
+
+        if (!validatePassword(password)) {
+            alert('Password must be at least 6 characters');
+            return;
+        }
+
+        this.submit();
+    });
+}
+
+// Signup Form Validation
+const signupForm = document.getElementById('signupForm');
+if (signupForm) {
+    signupForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const username = document.getElementById('username').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const confirmPassword = document.getElementById('confirm_password').value;
+
+        if (!username || !email || !password || !confirmPassword) {
+            alert('Please fill in all fields');
+            return;
+        }
+
+        if (username.length < 3) {
+            alert('Username must be at least 3 characters');
+            return;
+        }
+
+        if (!validateEmail(email)) {
+            alert('Please enter a valid email');
+            return;
+        }
+
+        if (!validatePassword(password)) {
+            alert('Password must be at least 6 characters');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            alert('Passwords do not match');
+            return;
+        }
+
+        this.submit();
+    });
+}
+
+// Upload Form Validation
+const uploadForm = document.getElementById('uploadForm');
+if (uploadForm) {
+    uploadForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const title = document.getElementById('title').value.trim();
+        const category = document.getElementById('category').value;
+        const file = document.getElementById('file').files[0];
+
+        if (!title || !category || !file) {
+            alert('Please fill in all fields and select a file');
+            return;
+        }
+
+        if (file.size > 50 * 1024 * 1024) { // 50MB limit
+            alert('File size must be less than 50MB');
+            return;
+        }
+
+        this.submit();
+    });
+}
+
+// Smooth Scroll Navigation
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+            target.scrollIntoView({
+                behavior: 'smooth'
+            });
+        }
+    });
+});
+
+// Format Time Display
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Show Loading State
+function showLoading(button) {
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner"></span> Loading...';
+}
+
+function hideLoading(button, text) {
+    button.disabled = false;
+    button.innerHTML = text;
+}
+
+// Fetch API Helper
+async function fetchAPI(url, options = {}) {
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            },
+            ...options
+        });
+
+        if (!response.ok) {
+            throw new Error(`API Error: ${response.statusText}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Fetch error:', error);
+        throw error;
+    }
+}
+
+// Debounce Function
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Search Debounced
+const debouncedSearch = debounce(searchLibrary, 300);
+
+// Notification System
+function showNotification(message, type = 'info', duration = 3000) {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 1rem 2rem;
+        background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+        color: white;
+        border-radius: 5px;
+        z-index: 1000;
+        animation: slideIn 0.3s ease;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, duration);
+}
+
+// Animation Styles
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideIn {
+        from {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+
+    @keyframes slideOut {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+    }
+`;
+document.head.appendChild(style);
+
+// Notification Count Loading
+function loadNotificationCount() {
+    const notificationCount = document.getElementById('notificationCount');
+    if (!notificationCount) return;
+
+    fetch('/api/notifications/unread-count')
+        .then(response => response.json())
+        .then(data => {
+            const count = data.unread_count;
+            if (count > 0) {
+                notificationCount.textContent = count > 99 ? '99+' : count;
+                notificationCount.style.display = 'inline-block';
+            } else {
+                notificationCount.style.display = 'none';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading notification count:', error);
+        });
+}
+
+// Load notification count on page load for authenticated users
+document.addEventListener('DOMContentLoaded', function() {
+    // Load saved theme
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    }
+    
+    // Load notification count if user is authenticated
+    const notificationCount = document.getElementById('notificationCount');
+    if (notificationCount) {
+        loadNotificationCount();
+        // Refresh notification count every 30 seconds
+        setInterval(loadNotificationCount, 30000);
+    }
+});
+
+// Export Functions
+window.toggleDarkMode = toggleDarkMode;
+window.showNotification = showNotification;
+window.fetchAPI = fetchAPI;

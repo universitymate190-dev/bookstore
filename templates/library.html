@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library - Bookstore</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container">
+            <div class="logo">📚 Bookstore</div>
+            <button class="hamburger" id="hamburger" aria-label="Toggle menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <ul class="nav-links" id="navLinks">
+                <li><a href="/">Home</a></li>
+                <li><a href="/library">Library</a></li>
+                <li><a href="/exams">Exams</a></li>
+                <li><a href="/courses">Courses</a></li>
+                <li><a href="/dashboard">Dashboard</a></li>
+                <li><a href="/profile">Profile</a></li>
+                <li><a href="/groups">Groups</a></li>
+                <li><a href="/notes">Notes</a></li>
+                <li><a href="/search">Search</a></li>
+                <li><a href="/notifications" class="notification-link">
+                    <span class="notification-bell">🔔</span>
+                    <span class="notification-count" id="notificationCount" style="display: none;"></span>
+                </a></li>
+                <li><a href="/privacy">Privacy Policy</a></li>
+                <li><a href="/logout" class="logout-btn">Logout</a></li>
+            </ul>
+        </div>
+    </nav>
+    <script>
+        const hamburger = document.getElementById('hamburger');
+        const navLinks = document.getElementById('navLinks');
+        if (hamburger) {
+            hamburger.addEventListener('click', () => {
+                navLinks.classList.toggle('active');
+                hamburger.classList.toggle('active');
+            });
+            document.querySelectorAll('.nav-links a').forEach(link => {
+                link.addEventListener('click', () => {
+                    navLinks.classList.remove('active');
+                    hamburger.classList.remove('active');
+                });
+            });
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.navbar')) {
+                    navLinks.classList.remove('active');
+                    hamburger.classList.remove('active');
+                }
+            });
+        }
+    </script>
+
+    <div class="container">
+        <h1>Library</h1>
+        
+        <div class="filter-section">
+            <select id="categoryFilter" class="filter-select">
+                <option value="">All Categories</option>
+                <option value="books">Books</option>
+                <option value="notes">Notes</option>
+                <option value="files">Files</option>
+            </select>
+            
+            <input type="text" id="searchInput" placeholder="Search books, notes, files..." class="search-input">
+        </div>
+
+        <div class="library-grid" id="libraryGrid">
+            <!-- Books/Files will be loaded dynamically -->
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>Contact Information</h4>
+                    <p>Phone: +254702060628</p>
+                    <p>Email: shakesian6@gmail.com</p>
+                </div>
+                <div class="footer-section">
+                    <p>&copy; 2026 Bookstore. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', loadLibrary);
+        document.getElementById('categoryFilter').addEventListener('change', filterLibrary);
+        document.getElementById('searchInput').addEventListener('input', searchLibrary);
+
+        function loadLibrary() {
+            fetch('/api/files')
+                .then(res => res.json())
+                .then(data => displayLibrary(data))
+                .catch(err => console.error('Error loading library:', err));
+        }
+
+        function displayLibrary(files) {
+            const grid = document.getElementById('libraryGrid');
+            grid.innerHTML = '';
+            
+            if (files.length === 0) {
+                grid.innerHTML = '<p>No files found</p>';
+                return;
+            }
+
+            files.forEach(file => {
+                const card = document.createElement('div');
+                card.className = 'file-card';
+                const uploaderInitial = file.uploader_username ? file.uploader_username.charAt(0).toUpperCase() : '?';
+                card.innerHTML = `
+                    <div class="file-header">
+                        <div class="uploader-info">
+                            <div class="uploader-avatar">${uploaderInitial}</div>
+                            <div class="uploader-details">
+                                <span class="uploader-name">${file.uploader_username}</span>
+                                <span class="upload-date">${new Date(file.created_at).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <h3>${file.title}</h3>
+                    <p class="file-category">Category: ${file.category}</p>
+                    <div class="file-actions">
+                        <a href="/view/${file.id}" class="btn btn-secondary">👁 View</a>
+                        <a href="/download/${file.id}" class="btn btn-primary">📥 Download</a>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function filterLibrary() {
+            const category = document.getElementById('categoryFilter').value;
+            fetch(`/api/files?category=${category}`)
+                .then(res => res.json())
+                .then(data => displayLibrary(data));
+        }
+
+        function searchLibrary() {
+            const query = document.getElementById('searchInput').value;
+            fetch(`/api/files?search=${query}`)
+                .then(res => res.json())
+                .then(data => displayLibrary(data));
+        }
+    </script>
+</body>
+</html>

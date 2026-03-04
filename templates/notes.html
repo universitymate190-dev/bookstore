@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notes - Bookstore</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">📚 Bookstore</div>
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/library">Library</a></li>
+                <li><a href="/exams">Exams</a></li>
+                <li><a href="/courses">Courses</a></li>
+                <li><a href="/dashboard">Dashboard</a></li>
+                <li><a href="/profile">Profile</a></li>
+                <li><a href="/groups">Groups</a></li>
+                <li><a href="/notes">Notes</a></li>
+                <li><a href="/search">Search</a></li>
+                <li><a href="/notifications" class="notification-link">
+                    <span class="notification-bell">🔔</span>
+                    <span class="notification-count" id="notificationCount" style="display: none;"></span>
+                </a></li>
+                <li><a href="/privacy">Privacy Policy</a></li>
+                <li><a href="/logout" class="logout-btn">Logout</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="notes-section">
+            <h1>Notes from Admin</h1>
+
+            {% if notes %}
+                <div class="notes-list">
+                    {% for note in notes %}
+                    <div class="note-card">
+                        <div class="note-header">
+                            <h3>{{ note.title }}</h3>
+                            <span class="note-date">{{ note.created_at.strftime('%B %d, %Y at %I:%M %p') if note.created_at else 'N/A' }}</span>
+                        </div>
+                        <div class="note-content">
+                            <p>{{ note.content }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon">📝</div>
+                    <h3>No Notes Yet</h3>
+                    <p>You don't have any notes from the admin at the moment.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>Contact Information</h4>
+                    <p>Phone: +254702060628</p>
+                    <p>Email: shakesian6@gmail.com</p>
+                </div>
+                <div class="footer-section">
+                    <p>&copy; 2026 Bookstore. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
