@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Suspended - Bookstore</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1c1c1c 0%, #2a2a2a 100%);
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .suspension-container {
+            background: linear-gradient(135deg, #2a2a2a 0%, #1c1c1c 100%);
+            border: 2px solid #ff3d00;
+            border-radius: 15px;
+            padding: 50px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(255, 61, 0, 0.3);
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .suspension-icon {
+            font-size: 80px;
+            margin-bottom: 30px;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-20px);
+            }
+        }
+
+        h1 {
+            color: #ff3d00;
+            font-size: 32px;
+            margin-bottom: 20px;
+            text-shadow: 0 2px 10px rgba(255, 61, 0, 0.3);
+        }
+
+        .suspension-message {
+            color: #ddd;
+            font-size: 18px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .suspension-details {
+            background: rgba(255, 61, 0, 0.1);
+            border-left: 4px solid #ff3d00;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 8px;
+            text-align: left;
+        }
+
+        .suspension-details h3 {
+            color: #ff3d00;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+
+        .suspension-details p {
+            color: #ccc;
+            margin: 10px 0;
+            line-height: 1.6;
+        }
+
+        .logout-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #ff3d00 0%, #ff6b00 100%);
+            color: white;
+            padding: 12px 40px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 20px rgba(255, 61, 0, 0.4);
+            margin-top: 20px;
+        }
+
+        .logout-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(255, 61, 0, 0.6);
+            background: linear-gradient(135deg, #ff6b00 0%, #ff3d00 100%);
+        }
+
+        .support-text {
+            color: #999;
+            font-size: 14px;
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid #444;
+        }
+
+        .support-text a {
+            color: #ff3d00;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+
+        .support-text a:hover {
+            color: #ff6b00;
+        }
+    </style>
+</head>
+<body>
+    <div class="suspension-container">
+        <div class="suspension-icon">🚫</div>
+        <h1>Account Suspended</h1>
+        <p class="suspension-message">
+            Your account has been suspended by the administration.
+        </p>
+
+        <div class="suspension-details">
+            <h3>⚠️ What This Means</h3>
+            <p>
+                Your account has been temporarily or permanently suspended. You can still log in, but you cannot access any pages or features on this platform.
+            </p>
+            <p>
+                This action was taken to maintain the integrity and safety of our community.
+            </p>
+        </div>
+
+        <div class="suspension-details">
+            <h3>📋 Next Steps</h3>
+            <p>
+                If you believe this is an error or would like to discuss your account status, please contact the administrator for more information.
+            </p>
+        </div>
+
+        <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+
+        <div class="support-text">
+            <p>Need assistance? Contact the site administrator for support.</p>
+        </div>
+    </div>
+</body>
+</html>

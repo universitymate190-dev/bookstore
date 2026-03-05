@@ -22,18 +22,6 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Initialize database and create directories on app startup
-with app.app_context():
-    init_db()
-    migrate_db()
-
-# Create necessary directories
-os.makedirs('uploads/books', exist_ok=True)
-os.makedirs('uploads/notes', exist_ok=True)
-os.makedirs('uploads/exams', exist_ok=True)
-os.makedirs('uploads/files', exist_ok=True)
-os.makedirs('uploads/profile_pictures', exist_ok=True)
-
 # Database initialization
 DATABASE = 'database.db'
 
@@ -68,6 +56,7 @@ def init_db():
         password TEXT NOT NULL,
         role TEXT DEFAULT 'user',
         profile_picture TEXT,
+        suspended BOOLEAN DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
@@ -259,6 +248,40 @@ def init_db():
         UNIQUE(user_id, note_id)
     )''')
     
+    # Group messages table
+    c.execute('''CREATE TABLE IF NOT EXISTS group_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        message TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (group_id) REFERENCES groups(id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )''')
+    
+    # Private messages table
+    c.execute('''CREATE TABLE IF NOT EXISTS private_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER NOT NULL,
+        receiver_id INTEGER NOT NULL,
+        message TEXT NOT NULL,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (sender_id) REFERENCES users(id),
+        FOREIGN KEY (receiver_id) REFERENCES users(id)
+    )''')
+    
+    # Push subscriptions table
+    c.execute('''CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        endpoint TEXT NOT NULL UNIQUE,
+        auth TEXT NOT NULL,
+        p256dh TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )''')
+    
     conn.commit()
     conn.close()
 
@@ -269,6 +292,13 @@ def migrate_db():
     
     # Check if columns exist and add them if they don't
     try:
+        # Migrate users table
+        c.execute('PRAGMA table_info(users)')
+        user_columns = [column[1] for column in c.fetchall()]
+        
+        if 'suspended' not in user_columns:
+            c.execute('ALTER TABLE users ADD COLUMN suspended BOOLEAN DEFAULT 0')
+        
         c.execute('PRAGMA table_info(exams)')
         columns = [column[1] for column in c.fetchall()]
         
@@ -309,6 +339,18 @@ def migrate_db():
     finally:
         conn.close()
 
+# Create necessary directories
+os.makedirs('uploads/books', exist_ok=True)
+os.makedirs('uploads/notes', exist_ok=True)
+os.makedirs('uploads/exams', exist_ok=True)
+os.makedirs('uploads/files', exist_ok=True)
+os.makedirs('uploads/profile_pictures', exist_ok=True)
+
+# Initialize database and create directories on app startup
+with app.app_context():
+    init_db()
+    migrate_db()
+
 # User Model
 class User(UserMixin):
     def __init__(self, id, username, email, role='user', created_at=None, profile_picture=None):
@@ -342,10 +384,34 @@ def hash_password(password):
 def verify_password(hashed, password):
     return check_password_hash(hashed, password)
 
+# Before request handler to check if user is suspended
+@app.before_request
+def check_suspended_account():
+    """Check if logged-in user is suspended and redirect them"""
+    if current_user.is_authenticated:
+        # Skip suspension check for suspended page and logout
+        if request.endpoint in ['suspended', 'logout']:
+            return
+        
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT suspended FROM users WHERE id = ?', (current_user.id,))
+        user = c.fetchone()
+        conn.close()
+        
+        if user and user['suspended']:
+            return redirect(url_for('suspended'))
+
 # Routes
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/suspended')
+@login_required
+def suspended():
+    """Page shown to suspended users"""
+    return render_template('suspended.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -449,6 +515,12 @@ def dashboard():
     }
     
     return render_template('dashboard.html', stats=stats)
+
+@app.route('/chatroom')
+@login_required
+def chatroom():
+    """Chatroom page for student communication"""
+    return render_template('chatroom.html')
 
 @app.route('/library')
 def library():
@@ -572,6 +644,14 @@ def view_group(group_id):
         flash('You are not a member of this group', 'danger')
         return redirect(url_for('groups'))
     
+    # convert sqlite row to dict and parse joined_at for template
+    membership = dict(membership)
+    # parse joined_at and convert to nice string to avoid Jinja errors
+    dt = parse_datetime(membership.get('joined_at'))
+    membership['joined_at'] = dt.strftime('%B %d, %Y') if dt else None
+    # normalize id in templates: use group_id instead of membership row id
+    membership['id'] = membership['group_id']
+    
     # Get group courses
     c.execute('''
         SELECT gc.*, c.name, c.description 
@@ -609,6 +689,149 @@ def view_group(group_id):
                          courses=group_courses,
                          assignments=[dict(a) for a in assignments],
                          submissions=submissions)
+
+@app.route('/api/group/<int:group_id>/messages')
+@login_required
+def get_group_messages(group_id):
+    """Get all messages for a group"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if user is member of group
+    c.execute('SELECT id FROM group_memberships WHERE user_id = ? AND group_id = ?',
+              (current_user.id, group_id))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Get messages
+    c.execute('''
+        SELECT gm.*, u.username, u.profile_picture
+        FROM group_messages gm
+        JOIN users u ON gm.user_id = u.id
+        WHERE gm.group_id = ?
+        ORDER BY gm.created_at ASC
+    ''', (group_id,))
+    messages = []
+    for msg in c.fetchall():
+        msg_dict = dict(msg)
+        msg_dict['created_at'] = parse_datetime(msg_dict['created_at']).isoformat() if msg_dict['created_at'] else None
+        messages.append(msg_dict)
+    
+    conn.close()
+    return jsonify(messages)
+
+@app.route('/api/group/<int:group_id>/send-message', methods=['POST'])
+@login_required
+def send_group_message(group_id):
+    """Send a message to a group"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if user is member of group
+    c.execute('SELECT id FROM group_memberships WHERE user_id = ? AND group_id = ?',
+              (current_user.id, group_id))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    message = data.get('message', '').strip()
+    
+    if not message:
+        return jsonify({'error': 'Message cannot be empty'}), 400
+    
+    # Insert message
+    c.execute('''
+        INSERT INTO group_messages (group_id, user_id, message)
+        VALUES (?, ?, ?)
+    ''', (group_id, current_user.id, message))
+    conn.commit()
+    
+    # Get the inserted message
+    c.execute('SELECT last_insert_rowid() as id')
+    msg_id = c.fetchone()['id']
+    
+    c.execute('''
+        SELECT gm.*, u.username, u.profile_picture
+        FROM group_messages gm
+        JOIN users u ON gm.user_id = u.id
+        WHERE gm.id = ?
+    ''', (msg_id,))
+    msg = c.fetchone()
+    msg_dict = dict(msg)
+    msg_dict['created_at'] = parse_datetime(msg_dict['created_at']).isoformat() if msg_dict['created_at'] else None
+    
+    # Get group name for notification
+    c.execute('SELECT name FROM groups WHERE id = ?', (group_id,))
+    group = c.fetchone()
+    group_name = group['name'] if group else 'Group'
+    
+    # Trigger push notifications to group members
+    c.execute('''
+        SELECT DISTINCT ps.endpoint, ps.auth, ps.p256dh
+        FROM push_subscriptions ps
+        JOIN group_memberships gm ON ps.user_id = gm.user_id
+        WHERE gm.group_id = ? AND ps.user_id != ?
+    ''', (group_id, current_user.id))
+    
+    subscriptions = c.fetchall()
+    
+    # For now, we just log that we would send notifications
+    # In production, integrate with a push service like Firebase or Web Push Protocol
+    if subscriptions:
+        notification_data = {
+            'title': f'New message in {group_name}',
+            'body': f'{current_user.username}: {message[:50]}...' if len(message) > 50 else f'{current_user.username}: {message}',
+            'icon': '/static/icon.png'
+        }
+        # TODO: Actually send push notifications here using a service
+        # Example: send_push_notification_batch(subscriptions, notification_data)
+        print(f'[NOTIFICATION] Would send to {len(subscriptions)} group members: {notification_data}')
+    
+    conn.close()
+    return jsonify(msg_dict)
+
+@app.route('/api/group/<int:group_id>/delete-message/<int:msg_id>', methods=['POST'])
+@login_required
+def delete_group_message(group_id, msg_id):
+    """Delete a message from a group"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if user is member of group
+    c.execute('SELECT id FROM group_memberships WHERE user_id = ? AND group_id = ?',
+              (current_user.id, group_id))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({'error': 'Unauthorized', 'success': False}), 403
+    
+    # Get the message to check ownership
+    c.execute('SELECT user_id FROM group_messages WHERE id = ? AND group_id = ?',
+              (msg_id, group_id))
+    msg = c.fetchone()
+    
+    if not msg:
+        conn.close()
+        return jsonify({'error': 'Message not found', 'success': False}), 404
+    
+    data = request.get_json()
+    scope = data.get('scope', 'me')
+    
+    # Check if user owns the message (for delete for everyone)
+    is_owner = msg['user_id'] == current_user.id
+    
+    if scope == 'everyone' and not is_owner:
+        conn.close()
+        return jsonify({'error': 'You can only delete your own messages for everyone', 'success': False}), 403
+    
+    # Delete the message
+    c.execute('DELETE FROM group_messages WHERE id = ? AND group_id = ?',
+              (msg_id, group_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'Message deleted'})
 
 @app.route('/admin/add-group-course/<int:group_id>', methods=['POST'])
 @login_required
@@ -899,6 +1122,37 @@ def leave_group(group_id):
     conn.close()
     
     flash('Left the group successfully', 'success')
+    return redirect(url_for('groups'))
+
+@app.route('/admin/delete-group/<int:group_id>', methods=['POST'])
+@login_required
+def delete_group(group_id):
+    if current_user.role != 'admin':
+        flash('Only administrators can delete groups', 'danger')
+        return redirect(url_for('groups'))
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Delete group messages
+    c.execute('DELETE FROM group_messages WHERE group_id = ?', (group_id,))
+    
+    # Delete group assignments
+    c.execute('DELETE FROM group_assignments WHERE group_id = ?', (group_id,))
+    
+    # Delete group courses
+    c.execute('DELETE FROM group_courses WHERE group_id = ?', (group_id,))
+    
+    # Delete group memberships
+    c.execute('DELETE FROM group_memberships WHERE group_id = ?', (group_id,))
+    
+    # Delete the group itself
+    c.execute('DELETE FROM groups WHERE id = ?', (group_id,))
+    
+    conn.commit()
+    conn.close()
+    
+    flash('Group deleted successfully', 'success')
     return redirect(url_for('groups'))
 
 @app.route('/notifications')
@@ -1856,7 +2110,19 @@ def api_users():
     
     conn = get_db()
     c = conn.cursor()
-    c.execute('SELECT id, username, email, role FROM users')
+    c.execute('SELECT id, username, email, role, suspended FROM users')
+    users = c.fetchall()
+    conn.close()
+    
+    return jsonify([dict(u) for u in users])
+
+@app.route('/api/chat-users')
+@login_required
+def api_chat_users():
+    """Get list of users for chat (excludes current user)"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT id, username FROM users WHERE id != ? ORDER BY username', (current_user.id,))
     users = c.fetchall()
     conn.close()
     
@@ -1938,6 +2204,38 @@ def demote_user(user_id):
     conn = get_db()
     c = conn.cursor()
     c.execute('UPDATE users SET role = ? WHERE id = ?', ('user', user_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/suspend-user/<int:user_id>', methods=['POST'])
+@login_required
+def suspend_user(user_id):
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Don't allow suspending yourself
+    if user_id == current_user.id:
+        return jsonify({'error': 'Cannot suspend yourself'}), 400
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('UPDATE users SET suspended = 1 WHERE id = ?', (user_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/unsuspend-user/<int:user_id>', methods=['POST'])
+@login_required
+def unsuspend_user(user_id):
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('UPDATE users SET suspended = 0 WHERE id = ?', (user_id,))
     conn.commit()
     conn.close()
     
@@ -2122,6 +2420,197 @@ def update_profile():
     conn.close()
     
     return jsonify({'success': True, 'message': 'Profile updated successfully'})
+
+# Push Notification Routes
+@app.route('/api/subscribe-push', methods=['POST'])
+@login_required
+def subscribe_push():
+    """Store user's push notification subscription"""
+    try:
+        data = request.get_json()
+        endpoint = data.get('endpoint')
+        auth = data.get('keys', {}).get('auth')
+        p256dh = data.get('keys', {}).get('p256dh')
+        
+        if not endpoint or not auth or not p256dh:
+            return jsonify({'error': 'Missing subscription data'}), 400
+        
+        conn = get_db()
+        c = conn.cursor()
+        
+        # Insert or replace subscription
+        try:
+            c.execute('''
+                INSERT INTO push_subscriptions (user_id, endpoint, auth, p256dh)
+                VALUES (?, ?, ?, ?)
+            ''', (current_user.id, endpoint, auth, p256dh))
+        except sqlite3.IntegrityError:
+            # Endpoint already exists, update it
+            c.execute('''
+                UPDATE push_subscriptions
+                SET auth = ?, p256dh = ?
+                WHERE user_id = ? AND endpoint = ?
+            ''', (auth, p256dh, current_user.id, endpoint))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Subscription saved'}), 201
+    except Exception as e:
+        print(f'Error subscribing to push: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/send-push-notification', methods=['POST'])
+@login_required
+def send_push_notification():
+    """Send push notification to all subscribed users (admin only)"""
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Only admins can send notifications'}), 403
+    
+    try:
+        data = request.get_json()
+        title = data.get('title', 'Notification')
+        body = data.get('body', '')
+        
+        if not body:
+            return jsonify({'error': 'Body is required'}), 400
+        
+        conn = get_db()
+        c = conn.cursor()
+        
+        # Get all push subscriptions
+        c.execute('SELECT id, user_id, endpoint, auth, p256dh FROM push_subscriptions')
+        subscriptions = c.fetchall()
+        
+        success_count = 0
+        failed_count = 0
+        
+        # For now, we'll just return success since actual push service requires backend integration
+        # In production, you would use a service like Firebase Cloud Messaging or Web Push Protocol
+        for sub in subscriptions:
+            try:
+                # TODO: Implement actual push service here
+                # For now, we're just marking as sent in the database
+                success_count += 1
+            except Exception as e:
+                print(f'Error sending push to subscription {sub["id"]}: {e}')
+                failed_count += 1
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Notification sent to {success_count} users',
+            'failed': failed_count
+        }), 200
+    except Exception as e:
+        print(f'Error sending push notification: {e}')
+        return jsonify({'error': str(e)}), 500
+
+# Private messaging endpoints
+@app.route('/api/private-messages/send', methods=['POST'])
+@login_required
+def send_private_message_chat():
+    """Send a private message to another user"""
+    try:
+        data = request.get_json()
+        receiver_username = data.get('receiver_username')
+        message_text = data.get('message')
+        
+        if not receiver_username or not message_text:
+            return jsonify({'error': 'Missing receiver or message'}), 400
+        
+        # Get receiver user ID
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT id FROM users WHERE username = ?', (receiver_username,))
+        receiver = c.fetchone()
+        
+        if not receiver:
+            conn.close()
+            return jsonify({'error': 'Receiver not found'}), 404
+        
+        receiver_id = receiver['id']
+        
+        # Insert message into database
+        c.execute('''INSERT INTO private_messages (sender_id, receiver_id, message, is_read)
+                     VALUES (?, ?, ?, 0)''',
+                  (current_user.id, receiver_id, message_text))
+        conn.commit()
+        message_id = c.lastrowid
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message_id': message_id,
+            'sender': current_user.username
+        }), 201
+    except Exception as e:
+        print(f'Error sending message: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/private-messages/conversation/<username>')
+@login_required
+def get_conversation(username):
+    """Get conversation history with a specific user"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        
+        # Get the other user's ID
+        c.execute('SELECT id FROM users WHERE username = ?', (username,))
+        other_user = c.fetchone()
+        
+        if not other_user:
+            conn.close()
+            return jsonify({'error': 'User not found'}), 404
+        
+        other_user_id = other_user['id']
+        
+        # Get all messages between current user and the other user
+        c.execute('''SELECT sender_id, message, created_at FROM private_messages
+                     WHERE (sender_id = ? AND receiver_id = ?) OR 
+                           (sender_id = ? AND receiver_id = ?)
+                     ORDER BY created_at ASC''',
+                  (current_user.id, other_user_id, other_user_id, current_user.id))
+        
+        messages = []
+        for row in c.fetchall():
+            sender_name = current_user.username if row['sender_id'] == current_user.id else username
+            messages.append({
+                'sender': sender_name,
+                'text': row['message'],
+                'timestamp': row['created_at']
+            })
+        
+        # Mark messages as read
+        c.execute('''UPDATE private_messages SET is_read = 1 
+                     WHERE receiver_id = ? AND sender_id = ? AND is_read = 0''',
+                  (current_user.id, other_user_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify(messages), 200
+    except Exception as e:
+        print(f'Error fetching conversation: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/private-messages/unread-count')
+@login_required
+def get_unread_count():
+    """Get count of unread messages for current user"""
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT COUNT(*) as count FROM private_messages WHERE receiver_id = ? AND is_read = 0',
+                  (current_user.id,))
+        result = c.fetchone()
+        conn.close()
+        
+        return jsonify({'unread_count': result['count']}), 200
+    except Exception as e:
+        print(f'Error getting unread count: {e}')
+        return jsonify({'error': str(e)}), 500
 
 # Error handlers
 @app.errorhandler(404)

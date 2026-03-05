@@ -130,5 +130,225 @@
     </footer>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+
+    <!-- Floating Chat Widget -->
+    <div id="chat-button" onclick="toggleChat()" title="Open Chat">💬</div>
+    <div id="chat-box">
+        <div id="chat-header">
+            <div>
+                <div id="chat-title">Private Chat</div>
+                <div id="selected-user" style="font-size: 0.7rem; color: #ddd; margin-top: 2px;"></div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button onclick="openUserSelector()" title="Select User" style="background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 4px;">➕</button>
+                <span onclick="toggleChat()" style="cursor:pointer; font-size: 18px; padding: 4px;">✖</span>
+            </div>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input">
+            <input type="text" id="message" placeholder="Type message..." onkeypress="handleChatKeypress(event)">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <!-- User Selector Modal -->
+    <div id="user-selector-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10000; align-items: center; justify-content: center;">
+        <div style="background: #1c1c1c; border-radius: 10px; padding: 20px; width: 300px; max-height: 400px; color: white; border: 1px solid #333;">
+            <div style="font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                Select User
+                <span onclick="closeUserSelector()" style="cursor: pointer; font-size: 18px;">✖</span>
+            </div>
+            <div id="users-list" style="overflow-y: auto; max-height: 300px; display: flex; flex-direction: column; gap: 8px;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Floating Chat Widget Functionality
+        let selectedChatUser = null;
+        let conversations = JSON.parse(localStorage.getItem("privateConversations")) || {};
+        let allUsers = [];
+        let currentUsername = "{{ current_user.username if current_user.is_authenticated else 'Guest' }}";
+
+        // Fetch real users from backend
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/chat-users');
+                if (response.ok) {
+                    const users = await response.json();
+                    allUsers = users.map(u => u.username);
+                } else {
+                    console.error('Failed to load users');
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+            }
+        }
+
+        // Poll for new messages every 3 seconds
+        async function pollNewMessages() {
+            if (!selectedChatUser) return;
+            
+            try {
+                const response = await fetch(`/api/private-messages/conversation/${selectedChatUser}`);
+                if (response.ok) {
+                    const messages = await response.json();
+                    const box = document.getElementById("chat-messages");
+                    
+                    // Get existing message count
+                    const existingCount = box.querySelectorAll('.message').length;
+                    
+                    // If there are new messages, reload the conversation
+                    if (messages.length > existingCount) {
+                        box.innerHTML = "";
+                        messages.forEach(msg => {
+                            const msgDiv = document.createElement("div");
+                            const isCurrentUser = msg.sender === currentUsername;
+                            msgDiv.className = `message ${isCurrentUser ? 'user-message' : 'bot-message'}`;
+                            const displayName = isCurrentUser ? 'You' : msg.sender;
+                            msgDiv.innerHTML = `<strong>${displayName}:</strong> ${msg.text}`;
+                            box.appendChild(msgDiv);
+                        });
+                        box.scrollTop = box.scrollHeight;
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling messages:', error);
+            }
+        }
+
+        // Load users when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUsers();
+            // Poll for new messages every 3 seconds
+            setInterval(pollNewMessages, 3000);
+        });
+
+        function toggleChat() {
+            const chatBox = document.getElementById("chat-box");
+            if (chatBox.style.display === "flex") {
+                chatBox.style.display = "none";
+            } else {
+                chatBox.style.display = "flex";
+                document.getElementById("message").focus();
+            }
+        }
+
+        function openUserSelector() {
+            const modal = document.getElementById("user-selector-modal");
+            const usersList = document.getElementById("users-list");
+            usersList.innerHTML = "";
+            
+            allUsers.forEach(user => {
+                const userDiv = document.createElement("div");
+                userDiv.style.cssText = `
+                    padding: 10px;
+                    background: #2a2a2a;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    border-left: 3px solid ${selectedChatUser === user ? '#ff3d00' : '#333'};
+                `;
+                userDiv.innerHTML = `<strong>${user}</strong>`;
+                userDiv.onmouseover = () => userDiv.style.background = "#333";
+                userDiv.onmouseout = () => userDiv.style.background = "#2a2a2a";
+                userDiv.onclick = () => selectUser(user);
+                usersList.appendChild(userDiv);
+            });
+            
+            modal.style.display = "flex";
+        }
+
+        function closeUserSelector() {
+            document.getElementById("user-selector-modal").style.display = "none";
+        }
+
+        function selectUser(user) {
+            selectedChatUser = user;
+            document.getElementById("selected-user").textContent = `Chatting with: ${user}`;
+            loadConversation(user);
+            closeUserSelector();
+            document.getElementById("message").focus();
+        }
+
+        function loadConversation(user) {
+            const box = document.getElementById("chat-messages");
+            box.innerHTML = "<div style='text-align: center; color: #999;'>Loading...</div>";
+            
+            fetch(`/api/private-messages/conversation/${user}`)
+                .then(response => response.json())
+                .then(messages => {
+                    box.innerHTML = "";
+                    messages.forEach(msg => {
+                        const msgDiv = document.createElement("div");
+                        const isCurrentUser = msg.sender === currentUsername;
+                        msgDiv.className = `message ${isCurrentUser ? 'user-message' : 'bot-message'}`;
+                        const displayName = isCurrentUser ? 'You' : msg.sender;
+                        msgDiv.innerHTML = `<strong>${displayName}:</strong> ${msg.text}`;
+                        box.appendChild(msgDiv);
+                    });
+                    box.scrollTop = box.scrollHeight;
+                })
+                .catch(error => {
+                    console.error('Error loading conversation:', error);
+                    box.innerHTML = "<div style='color: #ff3d00;'>Error loading messages</div>";
+                });
+        }
+
+        function sendMessage() {
+            if (!selectedChatUser) {
+                alert("Please select a user first by clicking the + button");
+                return;
+            }
+
+            const msg = document.getElementById("message").value.trim();
+            if (msg === "") return;
+
+            const box = document.getElementById("chat-messages");
+            
+            // Add user message to UI
+            const userDiv = document.createElement("div");
+            userDiv.className = "message user-message";
+            userDiv.innerHTML = `<strong>You:</strong> ${msg.replace(/</g, '&lt;').replace(/>/g, '&gt;')}`;
+            box.appendChild(userDiv);
+
+            document.getElementById("message").value = "";
+            box.scrollTop = box.scrollHeight;
+
+            // Send message to backend
+            fetch('/api/private-messages/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    receiver_username: selectedChatUser,
+                    message: msg
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    console.error('Error sending message:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+        function handleChatKeypress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', function(e) {
+            const modal = document.getElementById("user-selector-modal");
+            if (e.target === modal) {
+                closeUserSelector();
+            }
+        });
+    </script>
 </body>
 </html>

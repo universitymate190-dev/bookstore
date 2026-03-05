@@ -99,11 +99,19 @@
                                 <p class="group-description">{{ group.description }}</p>
                                 {% endif %}
                                 <div class="group-meta">
-                                    <small>Joined: {{ group.joined_at.strftime('%B %d, %Y') if group.joined_at else 'N/A' }}</small>
+                                    <small>Joined: {{ group.joined_at if group.joined_at else 'N/A' }}</small>
                                 </div>
-                                <form action="/leave-group/{{ group.id }}" method="POST" style="display: inline;">
-                                    <button type="submit" class="btn btn-outline btn-sm" onclick="return confirm('Are you sure you want to leave this group?')">Leave Group</button>
-                                </form>
+                                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                    <a href="/group/{{ group.id }}" class="btn btn-primary btn-sm" style="flex: 1; text-align: center; text-decoration: none;">View Group</a>
+                                    <form action="/leave-group/{{ group.id }}" method="POST" style="flex: 1;">
+                                        <button type="submit" class="btn btn-outline btn-sm" style="width: 100%;" onclick="return confirm('Are you sure you want to leave this group?')">Leave</button>
+                                    </form>
+                                    {% if current_user.role == 'admin' %}
+                                    <form action="/admin/delete-group/{{ group.id }}" method="POST" style="flex: 0 0 auto;">
+                                        <button type="submit" class="btn btn-sm" style="background: #ef4444; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer;" onclick="return confirm('Are you sure you want to permanently delete this group? This cannot be undone.')">🗑️</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
                             </div>
                             {% endfor %}
                         </div>
@@ -139,13 +147,20 @@
                                 <div class="group-meta">
                                     <small>Created by: {{ group.creator_name }} | {{ group.created_at.strftime('%B %d, %Y') if group.created_at else 'N/A' }}</small>
                                 </div>
-                                {% if current_user.id not in joined_groups|map(attribute='id') %}
-                                <form action="/join-group/{{ group.id }}" method="POST">
-                                    <button type="submit" class="btn btn-primary btn-sm">Join Group</button>
-                                </form>
-                                {% else %}
-                                <span class="already-member">Already a member</span>
-                                {% endif %}
+                                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                    {% if current_user.id not in joined_groups|map(attribute='id') %}
+                                    <form action="/join-group/{{ group.id }}" method="POST" style="flex: 1;">
+                                        <button type="submit" class="btn btn-primary btn-sm" style="width: 100%;">Join Group</button>
+                                    </form>
+                                    {% else %}
+                                    <a href="/group/{{ group.id }}" class="btn btn-primary btn-sm" style="flex: 1; text-align: center; text-decoration: none;">View Group</a>
+                                    {% endif %}
+                                    {% if current_user.role == 'admin' %}
+                                    <form action="/admin/delete-group/{{ group.id }}" method="POST" style="flex: 0 0 auto;">
+                                        <button type="submit" class="btn btn-sm" style="background: #ef4444; color: white; padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer;" onclick="return confirm('Are you sure you want to permanently delete this group? This cannot be undone.')">🗑️</button>
+                                    </form>
+                                    {% endif %}
+                                </div>
                             </div>
                             {% endfor %}
                         </div>

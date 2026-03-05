@@ -323,18 +323,80 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Request push notification permission and register service worker
 function registerPushNotifications() {
-    if ('serviceWorker' in navigator && 'Notification' in window) {
+    if ('serviceWorker' in navigator && 'Notification' in window && 'PushManager' in window) {
         navigator.serviceWorker.register('/static/service-worker.js')
             .then(reg => {
                 console.log('Service Worker registered:', reg);
                 if (Notification.permission === 'default') {
                     Notification.requestPermission().then(permission => {
                         console.log('Notification permission:', permission);
+                        if (permission === 'granted') {
+                            subscribePushNotifications(reg);
+                        }
                     });
+                } else if (Notification.permission === 'granted') {
+                    subscribePushNotifications(reg);
                 }
             })
             .catch(err => console.error('Service Worker registration failed:', err));
     }
+}
+
+// Subscribe to push notifications
+function subscribePushNotifications(registration) {
+    registration.pushManager.getSubscription()
+        .then(subscription => {
+            if (!subscription) {
+                // Create new subscription
+                registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array('BElmYW5kRXZlcnlvbmVLbm93c1RoaXNJc0FEaWZmZXJlbnRQdWJLZXlUaGlzSXNSZWFsbHlKdXN0QVBsYWNlaG9sZGVy')
+                })
+                .then(subscription => {
+                    console.log('Push subscription created:', subscription);
+                    savePushSubscription(subscription);
+                })
+                .catch(err => {
+                    console.warn('Push subscription failed (this is normal without a push service):', err);
+                });
+            } else {
+                console.log('Already subscribed to push:', subscription);
+                savePushSubscription(subscription);
+            }
+        })
+        .catch(err => console.warn('Error getting push subscription:', err));
+}
+
+// Save subscription to server
+function savePushSubscription(subscription) {
+    fetch('/api/subscribe-push', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(subscription)
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Push subscription saved:', data);
+    })
+    .catch(err => console.error('Error saving subscription:', err));
+}
+
+// Convert base64 string to Uint8Array
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
 }
 
 // call registration on load
@@ -360,3 +422,4 @@ window.toggleDarkMode = toggleDarkMode;
 window.showNotification = showNotification;
 window.fetchAPI = fetchAPI;
 window.showPushNotification = showPushNotification;
+

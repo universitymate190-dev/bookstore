@@ -102,6 +102,55 @@
         </div>
     </section>
 
+    <section class="notifications-section">
+        <div class="container">
+            <h2>Stay Updated</h2>
+            <p>Enable notifications to get alerts about new books, exams, and events</p>
+            <div class="notification-buttons">
+                <button class="btn btn-primary" onclick="enableNotifications()">Enable Notifications</button>
+                <button class="btn btn-secondary" onclick="sendTestNotification()">Send Test Notification</button>
+                <button class="btn btn-secondary" onclick="testLocalNotification()">Test Toast Notification</button>
+            </div>
+            <div id="notification-status" class="notification-status"></div>
+        </div>
+    </section>
+
+    <section class="calendar-section">
+        <div class="calendar">
+            <div class="header">
+                <button onclick="prevMonth()">◀</button>
+                <h3 id="monthYear"></h3>
+                <button onclick="nextMonth()">▶</button>
+            </div>
+
+            <div class="days">
+                <div>Sun</div>
+                <div>Mon</div>
+                <div>Tue</div>
+                <div>Wed</div>
+                <div>Thu</div>
+                <div>Fri</div>
+                <div>Sat</div>
+            </div>
+
+            <div class="dates" id="dates"></div>
+            
+            <!-- Event Form -->
+            <div class="event-form">
+                <h4>Add Event</h4>
+                <input type="hidden" id="selectedDate" name="selected_date">
+                <input type="text" id="eventInput" placeholder="Event name..." maxlength="50">
+                <button onclick="addEvent()" class="add-event-btn">Add Event</button>
+            </div>
+            
+            <!-- Events List -->
+            <div class="events-list">
+                <h4>Events</h4>
+                <div id="eventsList"></div>
+            </div>
+        </div>
+    </section>
+
     <footer>
         <div class="container">
             <div class="footer-content">
@@ -118,5 +167,547 @@
     </footer>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <script>
+        const monthYear = document.getElementById("monthYear");
+        const dates = document.getElementById("dates");
+        const selectedDateInput = document.getElementById("selectedDate");
+        const eventInput = document.getElementById("eventInput");
+        const eventsList = document.getElementById("eventsList");
+        
+        let currentDate = new Date();
+        let events = JSON.parse(localStorage.getItem("calendarEvents")) || {};
+        
+        function formatDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+        
+        function renderCalendar(){
+            dates.innerHTML="";
+        
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+        
+            const firstDay = new Date(year,month,1).getDay();
+            const lastDate = new Date(year,month+1,0).getDate();
+        
+            monthYear.innerText = currentDate.toLocaleString("default",{month:"long",year:"numeric"});
+        
+            for(let i=0;i<firstDay;i++){
+                dates.innerHTML += "<div></div>";
+            }
+        
+            for(let day=1;day<=lastDate;day++){
+                let todayClass="";
+                let eventClass="";
+                let today = new Date();
+                const dateStr = formatDate(new Date(year, month, day));
+                
+                if(day===today.getDate() && month===today.getMonth() && year===today.getFullYear()){
+                    todayClass="today";
+                }
+                
+                if(events[dateStr] && events[dateStr].length > 0) {
+                    eventClass = "has-event";
+                }
+                
+                dates.innerHTML += `<div class="date ${todayClass} ${eventClass}" onclick="selectDate('${dateStr}', ${day})">${day}</div>`;
+            }
+        }
+        
+        function selectDate(dateStr, day) {
+            selectedDateInput.value = dateStr;
+            eventInput.focus();
+            displayEventsForDate(dateStr);
+        }
+        
+        function addEvent() {
+            const dateStr = selectedDateInput.value;
+            const eventName = eventInput.value.trim();
+            
+            if (!dateStr) {
+                alert("Please select a date first");
+                return;
+            }
+            
+            if (!eventName) {
+                alert("Please enter an event name");
+                return;
+            }
+            
+            if (!events[dateStr]) {
+                events[dateStr] = [];
+            }
+            
+            events[dateStr].push(eventName);
+            localStorage.setItem("calendarEvents", JSON.stringify(events));
+            
+            eventInput.value = "";
+            renderCalendar();
+            displayEventsForDate(dateStr);
+        }
+        
+        function displayEventsForDate(dateStr) {
+            const dateObj = new Date(dateStr + 'T00:00:00');
+            const dateDisplay = dateObj.toLocaleDateString('default', {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'});
+            
+            eventsList.innerHTML = `<p style="color: #ff3d00; font-weight: bold; margin-bottom: 10px;">${dateDisplay}</p>`;
+            
+            if (events[dateStr] && events[dateStr].length > 0) {
+                events[dateStr].forEach((event, index) => {
+                    eventsList.innerHTML += `<div class="event-item">
+                        <span>${event}</span>
+                        <button onclick="deleteEvent('${dateStr}', ${index})" class="delete-event">✕</button>
+                    </div>`;
+                });
+            } else {
+                eventsList.innerHTML += `<p style="color: #999;">No events for this date</p>`;
+            }
+        }
+        
+        function deleteEvent(dateStr, index) {
+            if (events[dateStr]) {
+                events[dateStr].splice(index, 1);
+                if (events[dateStr].length === 0) {
+                    delete events[dateStr];
+                }
+                localStorage.setItem("calendarEvents", JSON.stringify(events));
+                renderCalendar();
+                displayEventsForDate(dateStr);
+            }
+        }
+        
+        function prevMonth(){
+            currentDate.setMonth(currentDate.getMonth()-1);
+            renderCalendar();
+            selectedDateInput.value = "";
+            eventsList.innerHTML = "";
+        }
+        
+        function nextMonth(){
+            currentDate.setMonth(currentDate.getMonth()+1);
+            renderCalendar();
+            selectedDateInput.value = "";
+            eventsList.innerHTML = "";
+        }
+        
+        renderCalendar();
+    </script>
+    
+    <script>
+        // Toast Notification System
+        let notificationsEnabled = localStorage.getItem("notificationsEnabled") === "true";
+        
+        function updateNotificationStatus() {
+            const statusDiv = document.getElementById("notification-status");
+            if (notificationsEnabled) {
+                statusDiv.innerHTML = '<p style="color: #10b981; font-weight: bold; margin-top: 15px;">✓ Notifications are enabled!</p>';
+            } else {
+                statusDiv.innerHTML = '';
+            }
+        }
+        
+        function enableNotifications() {
+            console.log("enableNotifications called");
+            
+            notificationsEnabled = true;
+            localStorage.setItem("notificationsEnabled", "true");
+            
+            showToast("Notifications enabled! 🎉", "You'll now receive alerts about new books, exams, and events.", "success");
+            updateNotificationStatus();
+        }
+        
+        function sendTestNotification() {
+            console.log("sendTestNotification called");
+            
+            if (!notificationsEnabled) {
+                showToast("⚠️ Notifications Not Enabled", "Click 'Enable Notifications' first to receive alerts.", "warning");
+                return;
+            }
+            
+            showToast("📚 Bookstore Update!", "Welcome to Bookstore! Explore our library and stay updated.", "info");
+        }
+        
+        function testLocalNotification() {
+            showToast("🔔 Test Notification", "This is a test toast notification that appears on your screen!", "success");
+        }
+        
+        function sendEventNotification(title, message, icon = "📌") {
+            if (notificationsEnabled) {
+                showToast(icon + " " + title, message, "info");
+            }
+        }
+        
+        function showToast(title, message, type = "info") {
+            console.log("[TOAST]", type.toUpperCase(), "-", title, "-", message);
+            
+            const toastContainer = document.getElementById("toast-container");
+            
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `
+                <div class="toast-content">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-message">${message}</div>
+                </div>
+                <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
+            `;
+            
+            toastContainer.appendChild(toast);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.style.animation = "slideOut 0.3s ease-out";
+                    setTimeout(() => toast.remove(), 300);
+                }
+            }, 5000);
+        }
+        
+        // Create toast container
+        const toastContainer = document.createElement('div');
+        toastContainer.id = "toast-container";
+        toastContainer.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        `;
+        document.body.appendChild(toastContainer);
+        
+        // Add toast styles
+        const toastStyle = document.createElement('style');
+        toastStyle.textContent = `
+            .toast {
+                padding: 15px 20px;
+                border-radius: 8px;
+                color: white;
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 10px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                animation: slideIn 0.3s ease-out;
+                backdrop-filter: blur(10px);
+            }
+            
+            .toast-success {
+                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            }
+            
+            .toast-warning {
+                background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            }
+            
+            .toast-error {
+                background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            }
+            
+            .toast-info {
+                background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            }
+            
+            .toast-content {
+                flex: 1;
+            }
+            
+            .toast-title {
+                font-weight: bold;
+                font-size: 0.95rem;
+                margin-bottom: 4px;
+            }
+            
+            .toast-message {
+                font-size: 0.85rem;
+                opacity: 0.95;
+            }
+            
+            .toast-close {
+                background: rgba(255, 255, 255, 0.3);
+                border: none;
+                color: white;
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                cursor: pointer;
+                font-weight: bold;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.3s;
+                padding: 0;
+                flex-shrink: 0;
+            }
+            
+            .toast-close:hover {
+                background: rgba(255, 255, 255, 0.5);
+                transform: scale(1.1);
+            }
+            
+            @keyframes slideIn {
+                from {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            
+            @keyframes slideOut {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(400px);
+                    opacity: 0;
+                }
+            }
+            
+            @media (max-width: 600px) {
+                #toast-container {
+                    left: 10px !important;
+                    right: 10px !important;
+                    max-width: none !important;
+                }
+            }
+        `;
+        document.head.appendChild(toastStyle);
+        
+        // Update status on page load
+        window.addEventListener('load', function() {
+            updateNotificationStatus();
+            console.log("Notifications enabled:", notificationsEnabled);
+        });
+    </script>
+
+    <!-- Floating Chat Widget -->
+    <div id="chat-button" onclick="toggleChat()" title="Open Chat">💬</div>
+    <div id="chat-box">
+        <div id="chat-header">
+            <div>
+                <div id="chat-title">Private Chat</div>
+                <div id="selected-user" style="font-size: 0.7rem; color: #ddd; margin-top: 2px;"></div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button onclick="openUserSelector()" title="Select User" style="background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 4px;">➕</button>
+                <span onclick="toggleChat()" style="cursor:pointer; font-size: 18px; padding: 4px;">✖</span>
+            </div>
+        </div>
+        <div id="chat-messages"></div>
+        <div id="chat-input">
+            <input type="text" id="message" placeholder="Type message..." onkeypress="handleChatKeypress(event)">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <!-- User Selector Modal -->
+    <div id="user-selector-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10000; align-items: center; justify-content: center;">
+        <div style="background: #1c1c1c; border-radius: 10px; padding: 20px; width: 300px; max-height: 400px; color: white; border: 1px solid #333;">
+            <div style="font-weight: bold; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                Select User
+                <span onclick="closeUserSelector()" style="cursor: pointer; font-size: 18px;">✖</span>
+            </div>
+            <div id="users-list" style="overflow-y: auto; max-height: 300px; display: flex; flex-direction: column; gap: 8px;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Floating Chat Widget Functionality
+        let selectedChatUser = null;
+        let conversations = JSON.parse(localStorage.getItem("privateConversations")) || {};
+        let allUsers = [];
+        let currentUsername = "{{ current_user.username if current_user.is_authenticated else 'Guest' }}";
+
+        // Fetch real users from backend
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/chat-users');
+                if (response.ok) {
+                    const users = await response.json();
+                    allUsers = users.map(u => u.username);
+                } else {
+                    console.error('Failed to load users');
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+            }
+        }
+
+        // Poll for new messages every 3 seconds
+        async function pollNewMessages() {
+            if (!selectedChatUser) return;
+            
+            try {
+                const response = await fetch(`/api/private-messages/conversation/${selectedChatUser}`);
+                if (response.ok) {
+                    const messages = await response.json();
+                    const box = document.getElementById("chat-messages");
+                    
+                    // Get existing message count
+                    const existingCount = box.querySelectorAll('.message').length;
+                    
+                    // If there are new messages, reload the conversation
+                    if (messages.length > existingCount) {
+                        box.innerHTML = "";
+                        messages.forEach(msg => {
+                            const msgDiv = document.createElement("div");
+                            const isCurrentUser = msg.sender === currentUsername;
+                            msgDiv.className = `message ${isCurrentUser ? 'user-message' : 'bot-message'}`;
+                            const displayName = isCurrentUser ? 'You' : msg.sender;
+                            msgDiv.innerHTML = `<strong>${displayName}:</strong> ${msg.text}`;
+                            box.appendChild(msgDiv);
+                        });
+                        box.scrollTop = box.scrollHeight;
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling messages:', error);
+            }
+        }
+
+        // Load users when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUsers();
+            // Poll for new messages every 3 seconds
+            setInterval(pollNewMessages, 3000);
+        });
+
+        function toggleChat() {
+            const chatBox = document.getElementById("chat-box");
+            if (chatBox.style.display === "flex") {
+                chatBox.style.display = "none";
+            } else {
+                chatBox.style.display = "flex";
+                document.getElementById("message").focus();
+            }
+        }
+
+        function openUserSelector() {
+            const modal = document.getElementById("user-selector-modal");
+            const usersList = document.getElementById("users-list");
+            usersList.innerHTML = "";
+            
+            allUsers.forEach(user => {
+                const userDiv = document.createElement("div");
+                userDiv.style.cssText = `
+                    padding: 10px;
+                    background: #2a2a2a;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    border-left: 3px solid ${selectedChatUser === user ? '#ff3d00' : '#333'};
+                `;
+                userDiv.innerHTML = `<strong>${user}</strong>`;
+                userDiv.onmouseover = () => userDiv.style.background = "#333";
+                userDiv.onmouseout = () => userDiv.style.background = "#2a2a2a";
+                userDiv.onclick = () => selectUser(user);
+                usersList.appendChild(userDiv);
+            });
+            
+            modal.style.display = "flex";
+        }
+
+        function closeUserSelector() {
+            document.getElementById("user-selector-modal").style.display = "none";
+        }
+
+        function selectUser(user) {
+            selectedChatUser = user;
+            document.getElementById("selected-user").textContent = `Chatting with: ${user}`;
+            loadConversation(user);
+            closeUserSelector();
+            document.getElementById("message").focus();
+        }
+
+        function loadConversation(user) {
+            const box = document.getElementById("chat-messages");
+            box.innerHTML = "<div style='text-align: center; color: #999;'>Loading...</div>";
+            
+            fetch(`/api/private-messages/conversation/${user}`)
+                .then(response => response.json())
+                .then(messages => {
+                    box.innerHTML = "";
+                    messages.forEach(msg => {
+                        const msgDiv = document.createElement("div");
+                        const isCurrentUser = msg.sender === currentUsername;
+                        msgDiv.className = `message ${isCurrentUser ? 'user-message' : 'bot-message'}`;
+                        const displayName = isCurrentUser ? 'You' : msg.sender;
+                        msgDiv.innerHTML = `<strong>${displayName}:</strong> ${msg.text}`;
+                        box.appendChild(msgDiv);
+                    });
+                    box.scrollTop = box.scrollHeight;
+                })
+                .catch(error => {
+                    console.error('Error loading conversation:', error);
+                    box.innerHTML = "<div style='color: #ff3d00;'>Error loading messages</div>";
+                });
+        }
+
+        function sendMessage() {
+            if (!selectedChatUser) {
+                alert("Please select a user first by clicking the + button");
+                return;
+            }
+
+            const msg = document.getElementById("message").value.trim();
+            if (msg === "") return;
+
+            const box = document.getElementById("chat-messages");
+            
+            // Add user message to UI
+            const userDiv = document.createElement("div");
+            userDiv.className = "message user-message";
+            userDiv.innerHTML = `<strong>You:</strong> ${msg.replace(/</g, '&lt;').replace(/>/g, '&gt;')}`;
+            box.appendChild(userDiv);
+
+            document.getElementById("message").value = "";
+            box.scrollTop = box.scrollHeight;
+
+            // Send message to backend
+            fetch('/api/private-messages/send', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    receiver_username: selectedChatUser,
+                    message: msg
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    console.error('Error sending message:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+
+        function handleChatKeypress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', function(e) {
+            const modal = document.getElementById("user-selector-modal");
+            if (e.target === modal) {
+                closeUserSelector();
+            }
+        });
+    </script>
 </body>
 </html>

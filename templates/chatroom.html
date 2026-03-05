@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat Room</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='chatroom.css') }}">
+</head>
+<body>
+
+  <!-- Add Friend Modal -->
+  <div id="add-modal">
+    <div class="modal">
+      <h3>Add Friend</h3>
+      <input id="fn" type="text" placeholder="Name..." maxlength="20" autocomplete="off">
+      <div class="modal-btns">
+        <button class="no" onclick="closeModal()">Cancel</button>
+        <button class="ok" onclick="addFriend()">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <header>Chat Room</header>
+
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside>
+      <h3>Friends</h3>
+      <div id="friend-list"></div>
+      <button class="ghost" onclick="openModal()">+ Add Friend</button>
+      <!-- Debug avatars -->
+      <div style="padding: 10px; border-top: 1px solid #2a2a2a; margin-top: 10px;">
+        <div style="font-size: 0.65rem; color: #666; margin-bottom: 5px; text-transform: uppercase;">Sample Avatar</div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <div style="width: 28px; height: 28px; background: #4fffb0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #111; font-size: 0.7rem;">AB</div>
+          <span style="font-size: 0.8rem;">Test User</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Chat -->
+    <div class="chat">
+      <div id="messages"></div>
+
+      <!-- Donation banner -->
+      <div class="donated-bar">
+        <span class="donated-text">Donated by Edger — March 5th</span>
+      </div>
+
+      <div class="bar">
+        <textarea id="msg-input" rows="1" placeholder="Type a message..."></textarea>
+        <button id="send-btn" onclick="send()">➤</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="{{ url_for('static', filename='chatroom.js') }}"></script>
+</body>
+</html>

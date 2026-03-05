@@ -114,6 +114,7 @@
                         <th>Username</th>
                         <th>Email</th>
                         <th>Role</th>
+                        <th>Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -236,24 +237,49 @@
         <!-- Notifications Tab -->
         <div id="notifications" class="tab-content">
             <h2>Send Notifications</h2>
-            <form action="/send-notification" method="POST" class="notification-form">
-                <div class="form-group">
-                    <label for="notification_title">Title:</label>
-                    <input type="text" id="notification_title" name="title" required placeholder="Notification title">
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+                <!-- In-App Notifications -->
+                <div>
+                    <h3>In-App Notifications</h3>
+                    <form action="/send-notification" method="POST" class="notification-form">
+                        <div class="form-group">
+                            <label for="notification_title">Title:</label>
+                            <input type="text" id="notification_title" name="title" required placeholder="Notification title">
+                        </div>
+                        <div class="form-group">
+                            <label for="notification_message">Message:</label>
+                            <textarea id="notification_message" name="message" rows="4" required placeholder="Notification message"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="expires_hours">Expiry Time (hours from now):</label>
+                            <input type="number" id="expires_hours" name="expires_hours" min="1" max="8760" value="12" placeholder="12">
+                            <small style="color: var(--text-secondary); display: block; margin-top: 0.25rem;">
+                                Set to 0 for notifications that never expire
+                            </small>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Send to All Users</button>
+                    </form>
                 </div>
-                <div class="form-group">
-                    <label for="notification_message">Message:</label>
-                    <textarea id="notification_message" name="message" rows="4" required placeholder="Notification message"></textarea>
+                
+                <!-- Push Notifications to Devices -->
+                <div>
+                    <h3>Push Notifications (Device)</h3>
+                    <form id="pushNotificationForm" class="notification-form">
+                        <div class="form-group">
+                            <label for="push_title">Title:</label>
+                            <input type="text" id="push_title" name="title" required placeholder="Notification title">
+                        </div>
+                        <div class="form-group">
+                            <label for="push_message">Message:</label>
+                            <textarea id="push_message" name="body" rows="4" required placeholder="Notification message"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Send to Subscribed Users</button>
+                    </form>
+                    <div id="pushNotificationStatus" style="margin-top: 1rem; padding: 1rem; border-radius: 0.5rem; display: none;">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="expires_hours">Expiry Time (hours from now):</label>
-                    <input type="number" id="expires_hours" name="expires_hours" min="1" max="8760" value="12" placeholder="12">
-                    <small style="color: var(--text-secondary); display: block; margin-top: 0.25rem;">
-                        Set to 0 for notifications that never expire
-                    </small>
-                </div>
-                <button type="submit" class="btn btn-primary">Send to All Users</button>
-            </form>
+            </div>
             
             <h3>Manage Existing Notifications</h3>
             <table class="admin-table">
@@ -347,9 +373,15 @@
                     const tbody = document.getElementById('usersTableBody');
                     tbody.innerHTML = '';
                     users.forEach(user => {
-                        const actions = user.role === 'admin' 
+                        const promoteDemoteBtn = user.role === 'admin' 
                             ? `<button onclick="demoteUser(${user.id})" class="btn btn-small">Demote to User</button>`
                             : `<button onclick="promoteUser(${user.id})" class="btn btn-small">Promote to Admin</button>`;
+                        
+                        const suspendBtn = user.suspended
+                            ? `<button onclick="unsuspendUser(${user.id})" class="btn btn-small btn-success">Unsuspend</button>`
+                            : `<button onclick="suspendUser(${user.id})" class="btn btn-small btn-warning">Suspend</button>`;
+                        
+                        const statusText = user.suspended ? '🚫 Suspended' : '✅ Active';
                         
                         const row = `
                             <tr>
@@ -357,9 +389,11 @@
                                 <td>${user.username}</td>
                                 <td>${user.email}</td>
                                 <td>${user.role}</td>
+                                <td><strong>${statusText}</strong></td>
                                 <td>
                                     <button onclick="sendMessage(${user.id})" class="btn-icon" title="Send Private Message">💬</button>
-                                    ${actions}
+                                    ${promoteDemoteBtn}
+                                    ${suspendBtn}
                                     <button onclick="deleteUser(${user.id})" class="btn btn-small btn-danger">Delete</button>
                                 </td>
                             </tr>
@@ -472,6 +506,38 @@
             }
         }
 
+        function suspendUser(userId) {
+            if (confirm('Are you sure you want to suspend this user account? They will not be able to access any pages.')) {
+                fetch(`/api/suspend-user/${userId}`, { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('User account has been suspended successfully.');
+                            loadUsers();
+                        } else {
+                            alert('Error: ' + (data.error || 'Failed to suspend user'));
+                        }
+                    })
+                    .catch(err => alert('Error suspending user: ' + err));
+            }
+        }
+
+        function unsuspendUser(userId) {
+            if (confirm('Are you sure you want to unsuspend this user account? They will regain access to all pages.')) {
+                fetch(`/api/unsuspend-user/${userId}`, { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('User account has been unsuspended successfully.');
+                            loadUsers();
+                        } else {
+                            alert('Error: ' + (data.error || 'Failed to unsuspend user'));
+                        }
+                    })
+                    .catch(err => alert('Error unsuspending user: ' + err));
+            }
+        }
+
         function sendMessage(userId) {
             const message = prompt('Enter your private message to this user:');
             if (message && message.trim()) {
@@ -550,6 +616,53 @@
                     .then(() => loadNotifications());
             }
         }
+
+        // Push notification handler
+        document.getElementById('pushNotificationForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const title = document.getElementById('push_title').value;
+            const body = document.getElementById('push_message').value;
+            const statusDiv = document.getElementById('pushNotificationStatus');
+
+            if (!title || !body) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            statusDiv.style.display = 'block';
+            statusDiv.textContent = 'Sending...';
+            statusDiv.style.backgroundColor = '#e8f4f8';
+            statusDiv.style.color = '#0066cc';
+
+            fetch('/admin/send-push-notification', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title: title,
+                    body: body
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusDiv.style.backgroundColor = '#e8f5e9';
+                    statusDiv.style.color = '#2e7d32';
+                    statusDiv.textContent = `✓ ${data.message}`;
+                    document.getElementById('pushNotificationForm').reset();
+                } else {
+                    statusDiv.style.backgroundColor = '#ffebee';
+                    statusDiv.style.color = '#c62828';
+                    statusDiv.textContent = `✗ Error: ${data.error}`;
+                }
+            })
+            .catch(error => {
+                statusDiv.style.backgroundColor = '#ffebee';
+                statusDiv.style.color = '#c62828';
+                statusDiv.textContent = `✗ Error: ${error.message}`;
+            });
+        });
     </script>
 </body>
 </html>
