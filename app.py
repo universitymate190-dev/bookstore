@@ -22,6 +22,18 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+# Initialize database and create directories on app startup
+with app.app_context():
+    init_db()
+    migrate_db()
+
+# Create necessary directories
+os.makedirs('uploads/books', exist_ok=True)
+os.makedirs('uploads/notes', exist_ok=True)
+os.makedirs('uploads/exams', exist_ok=True)
+os.makedirs('uploads/files', exist_ok=True)
+os.makedirs('uploads/profile_pictures', exist_ok=True)
+
 # Database initialization
 DATABASE = 'database.db'
 
