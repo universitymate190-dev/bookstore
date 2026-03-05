@@ -214,7 +214,7 @@
             {% if file_ext in ['txt', 'md', 'py', 'js', 'html', 'css', 'json'] %}
                 <div class="text-content">{{ file_content }}</div>
             {% elif file_ext == 'pdf' %}
-                <iframe src="/download/{{ file.id }}" class="pdf-viewer" type="application/pdf">
+                <iframe src="/download/{{ file.id }}?inline=1" class="pdf-viewer" type="application/pdf">
                     <p>Your browser does not support PDFs. <a href="/download/{{ file.id }}">Download the PDF</a> to view it.</p>
                 </iframe>
             {% else %}

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash, send_from_directory
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -77,6 +77,9 @@ def init_db():
         title TEXT NOT NULL,
         subject TEXT NOT NULL,
         time_limit INTEGER NOT NULL,
+        total_questions INTEGER,
+        passing_marks INTEGER,
+        description TEXT,
         created_by TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (created_by) REFERENCES users(username)
@@ -100,9 +103,10 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         exam_id INTEGER NOT NULL,
-        score INTEGER NOT NULL,
+        score INTEGER,
         total INTEGER NOT NULL,
         answers TEXT,
+        grading_status TEXT DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (exam_id) REFERENCES exams(id)
@@ -127,6 +131,63 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (group_id) REFERENCES groups(id),
         UNIQUE(user_id, group_id)
+    )''')
+    
+    # Group courses table (many-to-many relationship)
+    c.execute('''CREATE TABLE IF NOT EXISTS group_courses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        course_id INTEGER NOT NULL,
+        added_by INTEGER NOT NULL,
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (group_id) REFERENCES groups(id),
+        FOREIGN KEY (course_id) REFERENCES courses(id),
+        FOREIGN KEY (added_by) REFERENCES users(id),
+        UNIQUE(group_id, course_id)
+    )''')
+    
+    # Group assignments table
+    c.execute('''CREATE TABLE IF NOT EXISTS group_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        course_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        due_date TIMESTAMP,
+        created_by INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (group_id) REFERENCES groups(id),
+        FOREIGN KEY (course_id) REFERENCES courses(id),
+        FOREIGN KEY (created_by) REFERENCES users(id)
+    )''')
+    
+    # Assignment questions table
+    c.execute('''CREATE TABLE IF NOT EXISTS assignment_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignment_id INTEGER NOT NULL,
+        question TEXT NOT NULL,
+        question_type TEXT DEFAULT 'text', -- 'text', 'multiple_choice', 'essay'
+        options TEXT, -- JSON string for multiple choice options
+        correct_answer TEXT,
+        points INTEGER DEFAULT 1,
+        FOREIGN KEY (assignment_id) REFERENCES group_assignments(id)
+    )''')
+    
+    # Assignment submissions table
+    c.execute('''CREATE TABLE IF NOT EXISTS assignment_submissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignment_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        answers TEXT NOT NULL, -- JSON string of answers
+        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        score INTEGER,
+        feedback TEXT,
+        graded_by INTEGER,
+        graded_at TIMESTAMP,
+        FOREIGN KEY (assignment_id) REFERENCES group_assignments(id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (graded_by) REFERENCES users(id),
+        UNIQUE(assignment_id, user_id)
     )''')
     
     # Notifications table
@@ -189,13 +250,62 @@ def init_db():
     conn.commit()
     conn.close()
 
+def migrate_db():
+    """Add missing columns to exams and results tables if they don't exist"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if columns exist and add them if they don't
+    try:
+        c.execute('PRAGMA table_info(exams)')
+        columns = [column[1] for column in c.fetchall()]
+        
+        if 'total_questions' not in columns:
+            c.execute('ALTER TABLE exams ADD COLUMN total_questions INTEGER')
+        if 'passing_marks' not in columns:
+            c.execute('ALTER TABLE exams ADD COLUMN passing_marks INTEGER')
+        if 'description' not in columns:
+            c.execute('ALTER TABLE exams ADD COLUMN description TEXT')
+        
+        # Migrate results table
+        c.execute('PRAGMA table_info(results)')
+        result_columns = [column[1] for column in c.fetchall()]
+        
+        if 'grading_status' not in result_columns:
+            c.execute('ALTER TABLE results ADD COLUMN grading_status TEXT DEFAULT "pending"')
+        if 'score' in result_columns:
+            # Make score nullable for pending grading
+            c.execute('ALTER TABLE results RENAME TO results_old')
+            c.execute('''CREATE TABLE results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                exam_id INTEGER NOT NULL,
+                score INTEGER,
+                total INTEGER NOT NULL,
+                answers TEXT,
+                grading_status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (exam_id) REFERENCES exams(id)
+            )''')
+            c.execute('INSERT INTO results (id, user_id, exam_id, score, total, answers, created_at) SELECT id, user_id, exam_id, score, total, answers, created_at FROM results_old')
+            c.execute('DROP TABLE results_old')
+        
+        conn.commit()
+    except Exception as e:
+        print(f"Migration error: {e}")
+    finally:
+        conn.close()
+
 # User Model
 class User(UserMixin):
-    def __init__(self, id, username, email, role='user'):
+    def __init__(self, id, username, email, role='user', created_at=None, profile_picture=None):
         self.id = id
         self.username = username
         self.email = email
         self.role = role
+        self.created_at = parse_datetime(created_at) if created_at else None
+        self.profile_picture = profile_picture
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -206,7 +316,8 @@ def load_user(user_id):
     conn.close()
     
     if row:
-        return User(row['id'], row['username'], row['email'], row['role'])
+        row_dict = dict(row)
+        return User(row_dict['id'], row_dict['username'], row_dict['email'], row_dict['role'], row_dict.get('created_at'), row_dict.get('profile_picture'))
     return None
 
 # Utility Functions
@@ -305,11 +416,12 @@ def dashboard():
     c = conn.cursor()
     
     # Get user statistics
-    c.execute('SELECT COUNT(*) as count FROM results WHERE user_id = ?', (current_user.id,))
+    c.execute('SELECT COUNT(*) as count FROM results WHERE user_id = ? AND grading_status = ?', 
+              (current_user.id, 'graded'))
     exams_taken = c.fetchone()['count']
     
-    c.execute('SELECT AVG(CAST(score AS FLOAT) / total * 100) as avg FROM results WHERE user_id = ?',
-              (current_user.id,))
+    c.execute('SELECT AVG(CAST(score AS FLOAT) / total * 100) as avg FROM results WHERE user_id = ? AND grading_status = ?',
+              (current_user.id, 'graded'))
     avg_score_row = c.fetchone()
     average_score = int(avg_score_row['avg']) if avg_score_row['avg'] else 0
     
@@ -346,7 +458,14 @@ def groups():
         GROUP BY g.id
         ORDER BY g.created_at DESC
     ''')
-    all_groups = c.fetchall()
+    all_groups_data = c.fetchall()
+    
+    # Convert groups to dicts and parse datetime fields
+    all_groups = []
+    for group in all_groups_data:
+        group_dict = dict(group)
+        group_dict['created_at'] = parse_datetime(group_dict['created_at'])
+        all_groups.append(group_dict)
     
     # Get user's joined groups
     c.execute('''
@@ -356,7 +475,15 @@ def groups():
         WHERE gm.user_id = ?
         ORDER BY gm.joined_at DESC
     ''', (current_user.id,))
-    joined_groups = c.fetchall()
+    joined_groups_data = c.fetchall()
+    
+    # Convert joined groups to dicts and parse datetime fields
+    joined_groups = []
+    for group in joined_groups_data:
+        group_dict = dict(group)
+        group_dict['created_at'] = parse_datetime(group_dict['created_at'])
+        group_dict['joined_at'] = parse_datetime(group_dict['joined_at'])
+        joined_groups.append(group_dict)
     
     conn.close()
     
@@ -418,6 +545,336 @@ def join_group(group_id):
     flash('Successfully joined the group', 'success')
     return redirect(url_for('groups'))
 
+@app.route('/group/<int:group_id>')
+@login_required
+def view_group(group_id):
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if user is a member of this group
+    c.execute('SELECT gm.*, g.name, g.description FROM group_memberships gm JOIN groups g ON gm.group_id = g.id WHERE gm.user_id = ? AND gm.group_id = ?', (current_user.id, group_id))
+    membership = c.fetchone()
+    
+    if not membership:
+        conn.close()
+        flash('You are not a member of this group', 'danger')
+        return redirect(url_for('groups'))
+    
+    # Get group courses
+    c.execute('''
+        SELECT gc.*, c.name, c.description 
+        FROM group_courses gc 
+        JOIN courses c ON gc.course_id = c.id 
+        WHERE gc.group_id = ?
+        ORDER BY gc.added_at DESC
+    ''', (group_id,))
+    group_courses = c.fetchall()
+    
+    # Get group assignments
+    c.execute('''
+        SELECT ga.*, c.name as course_name
+        FROM group_assignments ga
+        JOIN courses c ON ga.course_id = c.id
+        WHERE ga.group_id = ?
+        ORDER BY ga.due_date ASC
+    ''', (group_id,))
+    assignments = c.fetchall()
+    
+    # Get user's submissions
+    assignment_ids = [a['id'] for a in assignments]
+    submissions = {}
+    if assignment_ids:
+        placeholders = ','.join('?' * len(assignment_ids))
+        c.execute(f'SELECT * FROM assignment_submissions WHERE user_id = ? AND assignment_id IN ({placeholders})',
+                  [current_user.id] + assignment_ids)
+        user_submissions = c.fetchall()
+        submissions = {s['assignment_id']: s for s in user_submissions}
+    
+    conn.close()
+    
+    return render_template('group_detail.html', 
+                         group=membership, 
+                         courses=group_courses,
+                         assignments=[dict(a) for a in assignments],
+                         submissions=submissions)
+
+@app.route('/admin/add-group-course/<int:group_id>', methods=['POST'])
+@login_required
+def add_group_course(group_id):
+    if current_user.role != 'admin':
+        flash('Only administrators can manage group courses', 'danger')
+        return redirect(url_for('groups'))
+    
+    course_id = request.form.get('course_id')
+    
+    if not course_id:
+        flash('Please select a course', 'danger')
+        return redirect(url_for('view_group', group_id=group_id))
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if already added
+    c.execute('SELECT id FROM group_courses WHERE group_id = ? AND course_id = ?', (group_id, course_id))
+    if c.fetchone():
+        conn.close()
+        flash('This course is already added to the group', 'warning')
+        return redirect(url_for('view_group', group_id=group_id))
+    
+    # Add course to group
+    c.execute('INSERT INTO group_courses (group_id, course_id, added_by) VALUES (?, ?, ?)',
+              (group_id, course_id, current_user.id))
+    conn.commit()
+    conn.close()
+    
+    flash('Course added to group successfully', 'success')
+    return redirect(url_for('view_group', group_id=group_id))
+
+@app.route('/admin/create-group-assignment/<int:group_id>', methods=['POST'])
+@login_required
+def create_group_assignment(group_id):
+    if current_user.role != 'admin':
+        flash('Only administrators can create assignments', 'danger')
+        return redirect(url_for('view_group', group_id=group_id))
+    
+    course_id = request.form.get('course_id')
+    title = request.form.get('title')
+    description = request.form.get('description')
+    due_date = request.form.get('due_date')
+    
+    if not course_id or not title:
+        flash('Course and title are required', 'danger')
+        return redirect(url_for('view_group', group_id=group_id))
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Create assignment
+    c.execute('''
+        INSERT INTO group_assignments (group_id, course_id, title, description, due_date, created_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (group_id, course_id, title, description, due_date, current_user.id))
+    
+    assignment_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    
+    flash('Assignment created successfully', 'success')
+    return redirect(url_for('edit_assignment', assignment_id=assignment_id))
+
+@app.route('/admin/edit-assignment/<int:assignment_id>')
+@login_required
+def edit_assignment(assignment_id):
+    if current_user.role != 'admin':
+        flash('Only administrators can edit assignments', 'danger')
+        return redirect(url_for('groups'))
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Get assignment details
+    c.execute('''
+        SELECT ga.*, g.name as group_name, c.name as course_name
+        FROM group_assignments ga
+        JOIN groups g ON ga.group_id = g.id
+        JOIN courses c ON ga.course_id = c.id
+        WHERE ga.id = ?
+    ''', (assignment_id,))
+    assignment = c.fetchone()
+    
+    if not assignment:
+        conn.close()
+        flash('Assignment not found', 'danger')
+        return redirect(url_for('groups'))
+    
+    # Get assignment questions
+    c.execute('SELECT * FROM assignment_questions WHERE assignment_id = ? ORDER BY id', (assignment_id,))
+    questions = c.fetchall()
+    
+    conn.close()
+    
+    return render_template('edit_assignment.html', 
+                         assignment=dict(assignment), 
+                         questions=[dict(q) for q in questions])
+
+@app.route('/api/add-assignment-question', methods=['POST'])
+@login_required
+def add_assignment_question():
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    assignment_id = data.get('assignment_id')
+    question = data.get('question')
+    question_type = data.get('question_type', 'text')
+    options = data.get('options')
+    correct_answer = data.get('correct_answer')
+    points = data.get('points', 1)
+    
+    if not assignment_id or not question:
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Add question
+    c.execute('''
+        INSERT INTO assignment_questions (assignment_id, question, question_type, options, correct_answer, points)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (assignment_id, question, question_type, options, correct_answer, points))
+    
+    question_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        'success': True,
+        'question_id': question_id,
+        'message': 'Question added successfully'
+    })
+
+@app.route('/admin/update-assignment/<int:assignment_id>', methods=['POST'])
+@login_required
+def update_assignment(assignment_id):
+    if current_user.role != 'admin':
+        flash('Only administrators can update assignments', 'danger')
+        return redirect(url_for('groups'))
+    
+    title = request.form.get('title')
+    description = request.form.get('description')
+    due_date = request.form.get('due_date')
+    
+    if not title:
+        flash('Assignment title is required', 'danger')
+        return redirect(request.url)
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Update assignment
+    if due_date:
+        c.execute('UPDATE group_assignments SET title = ?, description = ?, due_date = ? WHERE id = ?',
+                  (title, description, due_date, assignment_id))
+    else:
+        c.execute('UPDATE group_assignments SET title = ?, description = ? WHERE id = ?',
+                  (title, description, assignment_id))
+    
+    conn.commit()
+    conn.close()
+    
+    flash('Assignment updated successfully!', 'success')
+    return redirect(url_for('edit_assignment', assignment_id=assignment_id))
+
+@app.route('/admin/remove-assignment-question/<int:question_id>', methods=['POST'])
+@login_required
+def remove_assignment_question(question_id):
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    c.execute('DELETE FROM assignment_questions WHERE id = ?', (question_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'Question removed successfully'})
+
+@app.route('/submit-assignment/<int:assignment_id>', methods=['GET', 'POST'])
+@login_required
+def submit_assignment(assignment_id):
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Check if user can access this assignment (must be in the group)
+    c.execute('''
+        SELECT ga.*, gm.user_id
+        FROM group_assignments ga
+        JOIN group_memberships gm ON ga.group_id = gm.group_id
+        WHERE ga.id = ? AND gm.user_id = ?
+    ''', (assignment_id, current_user.id))
+    
+    if not c.fetchone():
+        conn.close()
+        flash('You do not have access to this assignment', 'danger')
+        return redirect(url_for('groups'))
+    
+    # Check if already submitted
+    c.execute('SELECT * FROM assignment_submissions WHERE assignment_id = ? AND user_id = ?',
+              (assignment_id, current_user.id))
+    existing_submission = c.fetchone()
+    
+    if existing_submission and request.method == 'GET':
+        # Get submission with answers
+        import json
+        answers_data = json.loads(existing_submission['answers'])
+        
+        # Get question details for display
+        submission_answers = []
+        for q in questions:
+            answer_text = answers_data.get(str(q['id']), '')
+            submission_answers.append({
+                'question': q['question'],
+                'answer_text': answer_text
+            })
+        
+        conn.close()
+        return render_template('submit_assignment.html', 
+                             assignment=dict(assignment), 
+                             questions=[dict(q) for q in questions],
+                             submission={'answers': submission_answers, 'submitted_at': existing_submission['submitted_at']},
+                             current_time=datetime.now())
+    
+    # Get assignment and questions
+    c.execute('''
+        SELECT ga.*, g.name as group_name, c.name as course_name
+        FROM group_assignments ga
+        JOIN groups g ON ga.group_id = g.id
+        JOIN courses c ON ga.course_id = c.id
+        WHERE ga.id = ?
+    ''', (assignment_id,))
+    assignment = c.fetchone()
+    
+    c.execute('SELECT * FROM assignment_questions WHERE assignment_id = ? ORDER BY id', (assignment_id,))
+    questions = c.fetchall()
+    
+    conn.close()
+    
+    if request.method == 'POST':
+        # Process submission
+        answers = {}
+        for q in questions:
+            answer = request.form.get(f'answer_{q["id"]}')
+            if not answer:
+                flash('Please answer all questions', 'danger')
+                return redirect(request.url)
+            answers[str(q['id'])] = answer
+        
+        import json
+        conn = get_db()
+        c = conn.cursor()
+        
+        if existing_submission:
+            # Update existing submission
+            c.execute('UPDATE assignment_submissions SET answers = ?, submitted_at = CURRENT_TIMESTAMP WHERE id = ?',
+                      (json.dumps(answers), existing_submission['id']))
+        else:
+            # Create new submission
+            c.execute('INSERT INTO assignment_submissions (assignment_id, user_id, answers) VALUES (?, ?, ?)',
+                      (assignment_id, current_user.id, json.dumps(answers)))
+        
+        conn.commit()
+        conn.close()
+        
+        flash('Assignment submitted successfully!', 'success')
+        return redirect(url_for('view_group', group_id=assignment['group_id']))
+    
+    return render_template('submit_assignment.html', 
+                         assignment=dict(assignment), 
+                         questions=[dict(q) for q in questions],
+                         submission=dict(existing_submission) if existing_submission else None,
+                         current_time=datetime.now())
+
 @app.route('/leave-group/<int:group_id>', methods=['POST'])
 @login_required
 def leave_group(group_id):
@@ -453,6 +910,8 @@ def notifications():
     for notif in user_notifications:
         notif_dict = dict(notif)
         notif_dict['created_at'] = parse_datetime(notif_dict['created_at'])
+        if notif_dict['read_at']:
+            notif_dict['read_at'] = parse_datetime(notif_dict['read_at'])
         notifications_list.append(notif_dict)
     
     # Mark all as read
@@ -582,16 +1041,28 @@ def upload_profile_picture():
         
         conn = get_db()
         c = conn.cursor()
-        c.execute('UPDATE users SET profile_picture = ? WHERE id = ?', 
-                  (f'uploads/profile_pictures/{filename}', current_user.id))
-        conn.commit()
-        conn.close()
+        try:
+            c.execute('UPDATE users SET profile_picture = ? WHERE id = ?', 
+                      (f'uploads/profile_pictures/{filename}', current_user.id))
+            conn.commit()
+            flash('Profile picture updated successfully', 'success')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Error updating profile picture: {str(e)}', 'danger')
+        finally:
+            conn.close()
         
-        flash('Profile picture updated successfully', 'success')
         return redirect(url_for('profile'))
     
     flash('Error uploading file', 'danger')
     return redirect(url_for('profile'))
+
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    try:
+        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    except FileNotFoundError:
+        return "File not found", 404
 
 @app.route('/courses')
 @login_required
@@ -673,10 +1144,21 @@ def send_note():
     title = request.form.get('title')
     content = request.form.get('content')
     course_id = request.form.get('course_id')
+    file = request.files.get('note_file')
     
-    if not title or not content:
-        flash('Title and content are required', 'danger')
+    if not title or (not content and (not file or file.filename == '')):
+        flash('Title and either content or a PDF file are required', 'danger')
         return redirect(url_for('admin'))
+    
+    # if an attachment is provided, save it and use its path as content
+    if file and file.filename:
+        filename = secure_filename(file.filename)
+        upload_path = os.path.join(app.config['UPLOAD_FOLDER'], 'notes')
+        os.makedirs(upload_path, exist_ok=True)
+        file_path = os.path.join(upload_path, filename)
+        file.save(file_path)
+        # store relative path for display
+        content = os.path.join('uploads', 'notes', filename)
     
     conn = get_db()
     c = conn.cursor()
@@ -829,7 +1311,7 @@ def admin_create_exam():
     conn = get_db()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO exams (title, subject, duration, total_questions, passing_marks, description, created_by)
+        INSERT INTO exams (title, subject, time_limit, total_questions, passing_marks, description, created_by)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     ''', (title, subject, duration, total_questions, passing_marks, description or '', current_user.username))
     conn.commit()
@@ -837,6 +1319,88 @@ def admin_create_exam():
     
     flash(f'Exam "{title}" created successfully', 'success')
     return redirect(url_for('admin'))
+
+@app.route('/admin/exam-questions/<int:exam_id>')
+@login_required
+def admin_exam_questions(exam_id):
+    if current_user.role != 'admin':
+        flash('Only administrators can manage exam questions', 'danger')
+        return redirect(url_for('admin'))
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Get exam details
+    c.execute('SELECT * FROM exams WHERE id = ?', (exam_id,))
+    exam = c.fetchone()
+    
+    if not exam:
+        flash('Exam not found', 'danger')
+        return redirect(url_for('admin'))
+    
+    # Get existing questions
+    c.execute('SELECT * FROM questions WHERE exam_id = ? ORDER BY id', (exam_id,))
+    questions = c.fetchall()
+    conn.close()
+    
+    return render_template('admin_exam_questions.html', exam=dict(exam), questions=[dict(q) for q in questions])
+
+@app.route('/api/add-question', methods=['POST'])
+@login_required
+def add_question():
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    data = request.get_json()
+    exam_id = data.get('exam_id')
+    question_text = data.get('question')
+    option_a = data.get('optionA')
+    option_b = data.get('optionB')
+    option_c = data.get('optionC')
+    option_d = data.get('optionD')
+    correct_answer = data.get('correct_answer')
+    
+    if not all([exam_id, question_text, option_a, option_b, option_c, option_d, correct_answer]):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Verify exam exists
+    c.execute('SELECT id FROM exams WHERE id = ?', (exam_id,))
+    if not c.fetchone():
+        conn.close()
+        return jsonify({'error': 'Exam not found'}), 404
+    
+    # Add question
+    c.execute('''
+        INSERT INTO questions (exam_id, question, optionA, optionB, optionC, optionD, correct_answer)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (exam_id, question_text, option_a, option_b, option_c, option_d, correct_answer))
+    
+    question_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        'success': True,
+        'question_id': question_id,
+        'message': 'Question added successfully'
+    })
+
+@app.route('/api/delete-question/<int:question_id>', methods=['DELETE'])
+@login_required
+def delete_question(question_id):
+    if current_user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM questions WHERE id = ?', (question_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True})
 
 @app.route('/search')
 def search():
@@ -871,11 +1435,25 @@ def search():
     
     conn.close()
     
+    # Parse datetime for files
+    files_with_dates = []
+    for file in files:
+        file_dict = dict(file)
+        file_dict['created_at'] = parse_datetime(file_dict['created_at'])
+        files_with_dates.append(file_dict)
+    
+    # Parse datetime for courses
+    courses_with_dates = []
+    for course in courses_list:
+        course_dict = dict(course)
+        course_dict['created_at'] = parse_datetime(course_dict['created_at'])
+        courses_with_dates.append(course_dict)
+    
     return render_template('search_results.html', 
                          query=query, 
                          category=category,
-                         files=files, 
-                         courses=courses_list)
+                         files=files_with_dates, 
+                         courses=courses_with_dates)
 
 @app.route('/api/admin/notifications')
 @login_required
@@ -902,11 +1480,12 @@ def profile():
     c = conn.cursor()
     
     # Get user statistics
-    c.execute('SELECT COUNT(*) as count FROM results WHERE user_id = ?', (current_user.id,))
+    c.execute('SELECT COUNT(*) as count FROM results WHERE user_id = ? AND grading_status = ?', 
+              (current_user.id, 'graded'))
     exams_taken = c.fetchone()['count']
     
-    c.execute('SELECT AVG(CAST(score AS FLOAT) / total * 100) as avg FROM results WHERE user_id = ?',
-              (current_user.id,))
+    c.execute('SELECT AVG(CAST(score AS FLOAT) / total * 100) as avg FROM results WHERE user_id = ? AND grading_status = ?',
+              (current_user.id, 'graded'))
     avg_score_row = c.fetchone()
     average_score = int(avg_score_row['avg']) if avg_score_row['avg'] else 0
     
@@ -977,21 +1556,30 @@ def take_exam(exam_id):
     c = conn.cursor()
     c.execute('SELECT * FROM exams WHERE id = ?', (exam_id,))
     exam = c.fetchone()
+    
+    # Check if exam has questions
+    c.execute('SELECT COUNT(*) as count FROM questions WHERE exam_id = ?', (exam_id,))
+    question_count = c.fetchone()['count']
     conn.close()
     
     if not exam:
         flash('Exam not found', 'danger')
         return redirect(url_for('exams'))
     
-    # Check if exam has expired (time limit has passed since creation)
-    from datetime import datetime, timedelta
-    exam_created = parse_datetime(exam['created_at'])
-    time_limit_minutes = exam['time_limit']
-    expiry_time = exam_created + timedelta(minutes=time_limit_minutes)
-    
-    if datetime.now() > expiry_time:
-        flash('This exam has expired and is no longer available.', 'danger')
+    if question_count == 0:
+        flash('This exam has no questions yet. Please check back later.', 'warning')
         return redirect(url_for('exams'))
+    
+    # Check if user has already taken this exam
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT id FROM results WHERE user_id = ? AND exam_id = ?', (current_user.id, exam_id))
+    existing_result = c.fetchone()
+    conn.close()
+    
+    if existing_result:
+        flash('You have already taken this exam.', 'info')
+        return redirect(url_for('dashboard'))
     
     return render_template('exam.html', exam=exam)
 
@@ -1007,49 +1595,161 @@ def submit_exam():
     c.execute('SELECT * FROM questions WHERE exam_id = ?', (exam_id,))
     questions = c.fetchall()
     
-    # Calculate score
-    score = 0
+    # Store answers without grading
     answers = {}
     
     for q in questions:
         user_answer = request.form.get(f'q_{q["id"]}')
         answers[q['id']] = user_answer
-        
-        if user_answer == q['correct_answer']:
-            score += 1
     
-    # Save result
+    # Save result with pending grading
     import json
-    c.execute('INSERT INTO results (user_id, exam_id, score, total, answers) VALUES (?, ?, ?, ?, ?)',
-              (current_user.id, exam_id, score, len(questions), json.dumps(answers)))
+    c.execute('INSERT INTO results (user_id, exam_id, total, answers, grading_status) VALUES (?, ?, ?, ?, ?)',
+              (current_user.id, exam_id, len(questions), json.dumps(answers), 'pending'))
     conn.commit()
     
     # Get result ID
     result_id = c.lastrowid
     conn.close()
     
-    return jsonify({
-        'score': score,
-        'total': len(questions),
-        'result_id': result_id
-    })
+    flash('Exam submitted successfully! Results will be available after grading.', 'success')
+    return redirect(url_for('dashboard'))
+
+@app.route('/admin/grade-exams')
+@login_required
+def grade_exams():
+    if current_user.role != 'admin':
+        flash('Only administrators can grade exams', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Get all pending results
+    c.execute('''
+        SELECT r.*, u.username, e.title as exam_title
+        FROM results r
+        JOIN users u ON r.user_id = u.id
+        JOIN exams e ON r.exam_id = e.id
+        WHERE r.grading_status = 'pending'
+        ORDER BY r.created_at DESC
+    ''')
+    pending_results_raw = c.fetchall()
+    
+    # Parse datetime objects
+    pending_results = []
+    for result in pending_results_raw:
+        result_dict = dict(result)
+        result_dict['created_at'] = parse_datetime(result_dict['created_at'])
+        pending_results.append(result_dict)
+    
+    conn.close()
+    
+    return render_template('grade_exams.html', pending_results=pending_results)
+
+@app.route('/admin/grade-result/<int:result_id>', methods=['GET', 'POST'])
+@login_required
+def grade_result(result_id):
+    if current_user.role != 'admin':
+        flash('Only administrators can grade results', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    if request.method == 'POST':
+        # Get the grading data
+        score = int(request.form.get('score'))
+        total = int(request.form.get('total'))
+        
+        conn = get_db()
+        c = conn.cursor()
+        try:
+            # Update the result
+            c.execute('UPDATE results SET score = ?, grading_status = ? WHERE id = ?',
+                      (score, 'graded', result_id))
+            
+            # Get the result to send notification
+            c.execute('SELECT r.*, u.username, e.title FROM results r JOIN users u ON r.user_id = u.id JOIN exams e ON r.exam_id = e.id WHERE r.id = ?',
+                      (result_id,))
+            result = c.fetchone()
+            
+            # Send notification to student
+            message = f"Your exam '{result['title']}' has been graded. Score: {score}/{total}"
+            c.execute('INSERT INTO notifications (title, message, created_by) VALUES (?, ?, ?)',
+                      ('Exam Graded', message, current_user.id))
+            
+            # Get the notification ID
+            notification_id = c.lastrowid
+            
+            # Link notification to student
+            c.execute('INSERT INTO user_notifications (user_id, notification_id) VALUES (?, ?)',
+                      (result['user_id'], notification_id))
+            
+            conn.commit()
+            flash('Result graded and notification sent to student!', 'success')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Error grading result: {str(e)}', 'danger')
+        finally:
+            conn.close()
+        
+        return redirect(url_for('grade_exams'))
+    
+    # GET request: show grading form
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute('''
+            SELECT r.*, u.username, e.title as exam_title, q.question, q.correct_answer
+            FROM results r
+            JOIN users u ON r.user_id = u.id
+            JOIN exams e ON r.exam_id = e.id
+            JOIN questions q ON e.id = q.exam_id
+            WHERE r.id = ?
+        ''', (result_id,))
+        result_data = c.fetchall()
+        
+        if not result_data:
+            flash('Result not found', 'danger')
+            return redirect(url_for('grade_exams'))
+        
+        # Parse answers
+        import json
+        answers = json.loads(result_data[0]['answers'])
+        
+        # Prepare data for template
+        result_info = dict(result_data[0])
+        result_info['created_at'] = parse_datetime(result_info['created_at'])
+        questions = []
+        for row in result_data:
+            q_dict = dict(row)
+            q_dict['user_answer'] = answers.get(str(row['id']), 'Not answered')
+            questions.append(q_dict)
+        
+        return render_template('grade_result.html', result=result_info, questions=questions)
+    finally:
+        conn.close()
 
 @app.route('/results/<int:result_id>')
 @login_required
 def show_result(result_id):
     conn = get_db()
     c = conn.cursor()
-    c.execute('SELECT * FROM results WHERE id = ? AND user_id = ?', (result_id, current_user.id))
+    c.execute('SELECT * FROM results WHERE id = ? AND user_id = ? AND grading_status = ?', 
+              (result_id, current_user.id, 'graded'))
     result = c.fetchone()
+    if not result:
+        conn.close()
+        flash('Result not found or not yet graded', 'danger')
+        return redirect(url_for('dashboard'))
+    
     c.execute('SELECT * FROM exams WHERE id = ?', (result['exam_id'],))
     exam = c.fetchone()
     conn.close()
     
-    if not result:
-        flash('Result not found', 'danger')
-        return redirect(url_for('dashboard'))
+    # Parse datetime
+    result_dict = dict(result)
+    result_dict['created_at'] = parse_datetime(result_dict['created_at'])
     
-    return render_template('result.html', result=result, exam=exam)
+    return render_template('result.html', result=result_dict, exam=exam)
 
 @app.route('/admin')
 @login_required
@@ -1301,7 +2001,11 @@ def download_file(file_id):
         flash('File not found', 'danger')
         return redirect(url_for('library'))
     
-    return send_file(file_row['file_path'], as_attachment=True, download_name=file_row['filename'])
+    # determine disposition: attachment by default, inline if requested
+    as_attachment = True
+    if request.args.get('inline') in ['1', 'true', 'yes']:
+        as_attachment = False
+    return send_file(file_row['file_path'], as_attachment=as_attachment, download_name=file_row['filename'])
 
 @app.route('/view/<int:file_id>')
 @login_required
@@ -1336,8 +2040,12 @@ def view_file(file_id):
         except:
             file_content = "Unable to read file content"
     
+    # Parse datetime
+    file_dict = dict(file_row)
+    file_dict['created_at'] = parse_datetime(file_dict['created_at'])
+    
     return render_template('view_file.html', 
-                         file=file_row, 
+                         file=file_dict, 
                          file_content=file_content, 
                          file_ext=file_ext)
 
@@ -1415,11 +2123,18 @@ def server_error(error):
 if __name__ == '__main__':
     # Initialize database
     init_db()
+    # Run migrations
+    migrate_db()
     
     # Create necessary directories
     os.makedirs('uploads/books', exist_ok=True)
     os.makedirs('uploads/notes', exist_ok=True)
     os.makedirs('uploads/exams', exist_ok=True)
+    os.makedirs('uploads/profile_pictures', exist_ok=True)
+    
+    # Get port from environment variable or use default
+    port = int(os.environ.get('PORT', 5000))
+    debug_mode = os.environ.get('FLASK_ENV') != 'production'
     
     # Run the app
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=debug_mode, host='0.0.0.0', port=port)

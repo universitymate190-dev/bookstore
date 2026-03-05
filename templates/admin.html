@@ -69,6 +69,7 @@
         <div class="admin-tabs">
             <button class="tab-btn active" onclick="showTab('users')">Users</button>
             <button class="tab-btn" onclick="showTab('exams')">Exams</button>
+            <button class="tab-btn" onclick="showTab('grading')">Grading</button>
             <button class="tab-btn" onclick="showTab('files')">Files</button>
             <button class="tab-btn" onclick="showTab('notifications')">Notifications</button>
             <button class="tab-btn" onclick="showTab('notes')">Notes</button>
@@ -178,6 +179,13 @@
             </table>
         </div>
 
+        <!-- Grading Tab -->
+        <div id="grading" class="tab-content">
+            <h2>Grade Student Exams</h2>
+            <p>Review and grade submitted exam answers manually.</p>
+            <a href="/admin/grade-exams" class="btn btn-primary" style="margin-top: 20px;">Go to Grading Panel</a>
+        </div>
+
         <!-- Files Tab -->
         <div id="files" class="tab-content">
             <h2>Manage Files</h2>
@@ -284,8 +292,12 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="note_content">Content:</label>
-                        <textarea id="note_content" name="content" rows="5" required placeholder="Type your note here..."></textarea>
+                        <label for="note_content">Content (plain text):</label>
+                        <textarea id="note_content" name="content" rows="5" placeholder="Type your note here..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="note_file">Attach PDF (optional):</label>
+                        <input type="file" id="note_file" name="note_file" accept="application/pdf">
                     </div>
                     <button type="submit" class="btn btn-primary">Send to All Users</button>
                 </form>
@@ -372,6 +384,7 @@
                                 <td>${exam.time_limit}</td>
                                 <td>${exam.question_count}</td>
                                 <td>
+                                    <a href="/admin/exam-questions/${exam.id}" class="btn btn-small" style="background: #28a745; color: white; text-decoration: none; padding: 6px 10px; border-radius: 3px; display: inline-block; margin-right: 5px;">📝 Questions</a>
                                     <button onclick="editExam(${exam.id})" class="btn btn-small">Edit</button>
                                     <button onclick="deleteExam(${exam.id})" class="btn btn-small">Delete</button>
                                 </td>

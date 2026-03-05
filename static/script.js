@@ -275,6 +275,8 @@ style.textContent = `
 document.head.appendChild(style);
 
 // Notification Count Loading
+let previousNotificationCount = 0;
+
 function loadNotificationCount() {
     const notificationCount = document.getElementById('notificationCount');
     if (!notificationCount) return;
@@ -289,6 +291,13 @@ function loadNotificationCount() {
             } else {
                 notificationCount.style.display = 'none';
             }
+            // if count increased and permission granted, show push notification alert
+            if (count > previousNotificationCount && previousNotificationCount !== 0) {
+                showPushNotification('You have new notifications', {
+                    body: `You have ${count} unread notifications.`
+                });
+            }
+            previousNotificationCount = count;
         })
         .catch(error => {
             console.error('Error loading notification count:', error);
@@ -312,7 +321,42 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// Request push notification permission and register service worker
+function registerPushNotifications() {
+    if ('serviceWorker' in navigator && 'Notification' in window) {
+        navigator.serviceWorker.register('/static/service-worker.js')
+            .then(reg => {
+                console.log('Service Worker registered:', reg);
+                if (Notification.permission === 'default') {
+                    Notification.requestPermission().then(permission => {
+                        console.log('Notification permission:', permission);
+                    });
+                }
+            })
+            .catch(err => console.error('Service Worker registration failed:', err));
+    }
+}
+
+// call registration on load
+document.addEventListener('DOMContentLoaded', function() {
+    registerPushNotifications();
+});
+
+// function to show a push-style notification
+function showPushNotification(title, options) {
+    if (Notification.permission === 'granted') {
+        navigator.serviceWorker.getRegistration().then(reg => {
+            if (reg) {
+                reg.showNotification(title, options);
+            } else {
+                new Notification(title, options);
+            }
+        });
+    }
+}
+
 // Export Functions
 window.toggleDarkMode = toggleDarkMode;
 window.showNotification = showNotification;
 window.fetchAPI = fetchAPI;
+window.showPushNotification = showPushNotification;

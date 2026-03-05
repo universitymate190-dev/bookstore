@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notes - Bookstore</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .pdf-viewer {
+            margin-top: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
@@ -84,7 +92,13 @@
                             {% endif %}
                         </div>
                         <div class="note-content">
-                            <p>{{ note.content }}</p>
+                            {% if note.content and note.content.lower().endswith('.pdf') %}
+                                <div class="pdf-viewer">
+                                    <embed src="/{{ note.content }}" type="application/pdf" width="100%" height="600px" />
+                                </div>
+                            {% else %}
+                                <p>{{ note.content }}</p>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}

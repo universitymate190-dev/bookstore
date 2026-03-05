@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Assignment - Bookstore</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .form-container {
+            max-width: 800px;
+            margin: 50px auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+        }
+        
+        .form-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .form-header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .form-header p {
+            color: #666;
+            font-size: 16px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        
+        .questions-section {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 25px;
+            background: #f8f9fa;
+        }
+        
+        .questions-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .questions-header h3 {
+            margin: 0;
+            color: #333;
+        }
+        
+        .question-item {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .question-text {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .question-type {
+            color: #666;
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        
+        .btn-add-question {
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .btn-add-question:hover {
+            background: #218838;
+        }
+        
+        .btn-remove {
+            background: #dc3545;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        
+        .btn-remove:hover {
+            background: #c82333;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .question-form {
+            display: none;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 20px;
+            margin-top: 15px;
+        }
+        
+        .question-form.show {
+            display: block;
+        }
+        
+        .question-form .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .question-form .form-group:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="logo">📚 Bookstore</div>
+            <ul class="nav-links">
+                <li><a href="/">Home</a></li>
+                <li><a href="/admin">Admin Panel</a></li>
+                <li><a href="/groups">Groups</a></li>
+                <li><a href="/logout" class="logout-btn">Logout</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="form-container">
+            <div class="form-header">
+                <h1>Edit Assignment</h1>
+                <p>Modify assignment details and questions</p>
+            </div>
+            
+            <form action="/admin/update-assignment/{{ assignment.id }}" method="POST">
+                <div class="form-group">
+                    <label for="title">Assignment Title:</label>
+                    <input type="text" name="title" id="title" value="{{ assignment.title }}" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="description">Description:</label>
+                    <textarea name="description" id="description">{{ assignment.description or '' }}</textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="due_date">Due Date (optional):</label>
+                    <input type="datetime-local" name="due_date" id="due_date" 
+                           value="{{ assignment.due_date.strftime('%Y-%m-%dT%H:%M') if assignment.due_date else '' }}">
+                </div>
+                
+                <div class="questions-section">
+                    <div class="questions-header">
+                        <h3>Questions</h3>
+                        <button type="button" class="btn-add-question" onclick="toggleQuestionForm()">Add Question</button>
+                    </div>
+                    
+                    <div id="question-form" class="question-form">
+                        <div class="form-group">
+                            <label for="question_text">Question Text:</label>
+                            <textarea name="question" id="question_text" required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="question_type">Question Type:</label>
+                            <select name="question_type" id="question_type" required>
+                                <option value="text">Text Answer</option>
+                                <option value="multiple_choice">Multiple Choice</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="options-group" style="display: none;">
+                            <label for="options">Options (one per line):</label>
+                            <textarea name="options" id="options" placeholder="Option 1&#10;Option 2&#10;Option 3"></textarea>
+                        </div>
+                        <button type="button" class="btn-primary" onclick="addQuestion()">Add Question</button>
+                    </div>
+                    
+                        <div id="questions-list">
+                        {% for question in questions %}
+                        <div class="question-item" data-question-id="{{ question.id }}">
+                            <div class="question-text">{{ question.question }}</div>
+                            <div class="question-type">{{ question.question_type.replace('_', ' ').title() }}</div>
+                            {% if question.options %}
+                            <div class="question-options">
+                                <strong>Options:</strong>
+                                <ul>
+                                    {% for option in question.options.split('\n') %}
+                                    <li>{{ option }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+                            <button type="button" class="btn-remove" onclick="removeQuestion({{ question.id }})">Remove</button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="btn-group">
+                    <button type="submit" class="btn-primary">Update Assignment</button>
+                    <a href="/group/{{ assignment.group_id }}" class="btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function toggleQuestionForm() {
+            const form = document.getElementById('question-form');
+            form.classList.toggle('show');
+        }
+        
+        function addQuestion() {
+            const questionText = document.getElementById('question_text').value;
+            const questionType = document.getElementById('question_type').value;
+            const options = document.getElementById('options').value;
+            
+            if (!questionText.trim()) {
+                alert('Please enter question text');
+                return;
+            }
+            
+            if (questionType === 'multiple_choice' && !options.trim()) {
+                alert('Please enter options for multiple choice question');
+                return;
+            }
+            
+            // Send AJAX request to add question
+            fetch('/admin/add-assignment-question/{{ assignment.id }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    question: questionText,
+                    question_type: questionType,
+                    options: options
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert('Error adding question: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error adding question');
+            });
+        }
+        
+        function removeQuestion(questionId) {
+            if (confirm('Are you sure you want to remove this question?')) {
+                fetch('/admin/remove-assignment-question/' + questionId, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error removing question: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error removing question');
+                });
+            }
+        }
+        
+        // Show/hide options field based on question type
+        document.getElementById('question_type').addEventListener('change', function() {
+            const optionsGroup = document.getElementById('options-group');
+            if (this.value === 'multiple_choice') {
+                optionsGroup.style.display = 'block';
+            } else {
+                optionsGroup.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

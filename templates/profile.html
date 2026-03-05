@@ -63,7 +63,7 @@
                     <div class="profile-picture-section">
                         <div class="profile-picture-container">
                             {% if current_user.profile_picture %}
-                                <img src="/{{ current_user.profile_picture }}" alt="Profile Picture" class="profile-picture">
+                                <img src="/{{ current_user.profile_picture }}?t={{ current_user.id }}" alt="Profile Picture" class="profile-picture">
                             {% else %}
                                 <div class="profile-avatar">
                                     <span>{{ current_user.username[0].upper() }}</span>

@@ -95,6 +95,9 @@
                                         <span class="upload-date">{{ file.created_at.strftime('%b %d, %Y') if file.created_at else 'N/A' }}</span>
                                     </div>
                                 </div>
+                                {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                                <button onclick="deleteFile({{ file.id }})" class="btn btn-icon btn-danger" title="Delete file">🗑️</button>
+                                {% endif %}
                             </div>
                             <h3>{{ file.title }}</h3>
                             <p class="file-category">Category: {{ file.category }}</p>
@@ -162,5 +165,25 @@
     </footer>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        function deleteFile(fileId) {
+            if (confirm('Are you sure you want to delete this file? This action cannot be undone.')) {
+                fetch(`/api/files/${fileId}`, { method: 'DELETE' })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('File deleted successfully!');
+                            location.reload();
+                        } else {
+                            alert('Error deleting file');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error deleting file');
+                    });
+            }
+        }
+    </script>
 </body>
 </html>

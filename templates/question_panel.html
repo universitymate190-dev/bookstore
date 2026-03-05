@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Setting Panel</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body {
+            display: flex;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+        }
+        
+        .sidebar {
+            width: 260px;
+            background: #2c3e50;
+            color: #ecf0f1;
+            display: flex;
+            flex-direction: column;
+            padding-top: 30px;
+        }
+        
+        .sidebar a {
+            padding: 15px 25px;
+            color: inherit;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        
+        .sidebar a:hover, .sidebar a.active {
+            background: #34495e;
+        }
+        
+        .main {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
+        
+        .header {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            color: #34495e;
+        }
+        
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.07);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+        
+        .form-group input[type="text"],
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+        
+        .toolbar {
+            border: 1px solid #ccc;
+            border-bottom: none;
+            padding: 8px;
+            background: #fafafa;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }
+        
+        .toolbar button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            margin-right: 8px;
+            font-size: 16px;
+        }
+        
+        .review-section {
+            margin-top: 40px;
+        }
+        
+        .review-item {
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            background: #fbfbfb;
+        }
+        
+        .review-item .actions {
+            margin-top: 8px;
+            font-size: 14px;
+            color: #555;
+        }
+        
+        .btn-primary {
+            background: #2980b9;
+            color: white;
+            padding: 12px 28px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .btn-primary:hover {
+            background: #1c5980;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <a href="#" class="active">Drafts</a>
+        <a href="#">Review</a>
+        <a href="#">Approved</a>
+        <a href="#">Archive</a>
+    </div>
+    <div class="main">
+        <div class="header">Question Setting Panel</div>
+        <div class="form-container">
+            <form method="POST" action="/admin/create-question">
+                <div class="form-group">
+                    <label for="question_text">Question Text</label>
+                    <div class="toolbar">
+                        <button type="button" onclick="document.execCommand('bold')"><strong>B</strong></button>
+                        <button type="button" onclick="document.execCommand('italic')"><em>I</em></button>
+                        <button type="button" onclick="document.execCommand('underline')"><u>U</u></button>
+                        <button type="button" onclick="document.execCommand('insertUnorderedList')">• List</button>
+                    </div>
+                    <div contenteditable="true" id="editor" style="border:1px solid #ccc;min-height:150px;padding:10px;border-radius:4px;"></div>
+                    <textarea name="question_text" id="question_text" style="display:none;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="question_type">Question Type</label>
+                    <select name="question_type" id="question_type" required>
+                        <option value="multiple_choice">Multiple Choice</option>
+                        <option value="true_false">True/False</option>
+                        <option value="short_answer">Short Answer</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="difficulty">Difficulty Level</label>
+                    <select name="difficulty" id="difficulty" required>
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="tags">Tags / Topics</label>
+                    <input type="text" name="tags" id="tags" placeholder="e.g., Mathematics, Biology">
+                </div>
+                <div class="form-group">
+                    <label for="answer_key">Answer Key & Explanations</label>
+                    <textarea name="answer_key" id="answer_key"></textarea>
+                </div>
+                <button type="submit" class="btn-primary" onclick="syncEditor()">Create Question</button>
+            </form>
+            
+            <div class="review-section">
+                <h3>Review Mode</h3>
+                <div class="review-item">
+                    <p>This question needs clearer wording.</p>
+                    <div class="actions">
+                        <a href="#">Upvote</a> | <a href="#">Downvote</a>
+                    </div>
+                </div>
+                <div class="review-item">
+                    <p>Good question, but answer key is missing detail.</p>
+                    <div class="actions">
+                        <a href="#">Upvote</a> | <a href="#">Downvote</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        function syncEditor() {
+            document.getElementById('question_text').value = document.getElementById('editor').innerHTML;
+        }
+    </script>
+</body>
+</html>

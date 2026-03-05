@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Exams - Bookstore</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .status-message {
+            color: #856404;
+            background-color: #fff3cd;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 14px;
+            border: 1px solid #ffeaa7;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
@@ -114,12 +125,27 @@
             exams.forEach(exam => {
                 const card = document.createElement('div');
                 card.className = 'exam-card';
+                
+                let buttonText = 'Start Exam';
+                let buttonClass = 'btn btn-primary';
+                let buttonDisabled = '';
+                let statusMessage = '';
+                
+                // Check if exam has questions
+                if (exam.question_count == 0) {
+                    buttonText = 'No Questions Yet';
+                    buttonClass = 'btn btn-secondary';
+                    buttonDisabled = 'disabled';
+                    statusMessage = '<p class="status-message">⏳ Questions not added yet</p>';
+                }
+                
                 card.innerHTML = `
                     <h3>${exam.title}</h3>
                     <p>Subject: ${exam.subject}</p>
                     <p>Time Limit: ${exam.time_limit} minutes</p>
                     <p>Questions: ${exam.question_count}</p>
-                    <a href="/exam/${exam.id}" class="btn btn-primary">Start Exam</a>
+                    ${statusMessage}
+                    <a href="/exam/${exam.id}" class="${buttonClass}" ${buttonDisabled}>${buttonText}</a>
                 `;
                 grid.appendChild(card);
             });
