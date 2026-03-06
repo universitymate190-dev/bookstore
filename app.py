@@ -3,8 +3,8 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import sqlite3
-import psycopg
-from psycopg.rows import dict_row
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import os
 from datetime import datetime, timedelta
 import secrets
@@ -33,7 +33,7 @@ USE_POSTGRES = DATABASE_URL is not None
 
 def get_db():
     if USE_POSTGRES:
-        conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         return conn
     else:
         conn = sqlite3.connect('database.db')
