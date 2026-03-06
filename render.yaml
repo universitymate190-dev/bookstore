@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: bookstore
+    runtime: python3.11
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: SECRET_KEY
+        fromSecret: secret-key
+      - key: ADMIN_EMAIL
+        fromSecret: admin-email
+      - key: ONESIGNAL_API_KEY
+        fromSecret: onesignal-api-key
+      - key: DATABASE_URL
+        fromDatabase: bookstore-db
+databases:
+  - name: bookstore-db
+    plan: starter
