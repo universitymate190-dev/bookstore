@@ -8,6 +8,10 @@ services:
     envVars:
       - key: SECRET_KEY
         fromSecret: secret-key
+      - key: ADMIN_EMAIL
+        fromSecret: admin-email
+      - key: ONESIGNAL_API_KEY
+        fromSecret: onesignal-api-key
 databases:
   - name: bookstore-db
     plan: starter

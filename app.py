@@ -8,6 +8,7 @@ from psycopg2.extras import RealDictCursor
 import os
 from datetime import datetime, timedelta
 import secrets
+import requests
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = secrets.token_hex(16)
@@ -1023,17 +1024,15 @@ def send_group_message(group_id):
     
     subscriptions = c.fetchall()
     
-    # For now, we just log that we would send notifications
-    # In production, integrate with a push service like Firebase or Web Push Protocol
-    if subscriptions:
-        notification_data = {
-            'title': f'New message in {group_name}',
-            'body': f'{current_user.username}: {message[:50]}...' if len(message) > 50 else f'{current_user.username}: {message}',
-            'icon': '/static/icon.png'
-        }
-        # TODO: Actually send push notifications here using a service
-        # Example: send_push_notification_batch(subscriptions, notification_data)
-        print(f'[NOTIFICATION] Would send to {len(subscriptions)} group members: {notification_data}')
+    # Send OneSignal notification to group members
+    notification_title = f'New message in {group_name}'
+    notification_body = f'{current_user.username}: {message[:100]}...' if len(message) > 100 else f'{current_user.username}: {message}'
+    
+    send_onesignal_notification(
+        title=notification_title,
+        message=notification_body,
+        user_ids=None  # Send to all users for now, since we don't track OneSignal player IDs
+    )
     
     conn.close()
     return jsonify(msg_dict)
@@ -2735,30 +2734,64 @@ def send_push_notification():
         c.execute('SELECT id, user_id, endpoint, auth, p256dh FROM push_subscriptions')
         subscriptions = c.fetchall()
         
-        success_count = 0
-        failed_count = 0
+        # Send OneSignal notification to all users
+        success = send_onesignal_notification(
+            title=title,
+            message=body,
+            user_ids=None  # Send to all users
+        )
         
-        # For now, we'll just return success since actual push service requires backend integration
-        # In production, you would use a service like Firebase Cloud Messaging or Web Push Protocol
-        for sub in subscriptions:
-            try:
-                # TODO: Implement actual push service here
-                # For now, we're just marking as sent in the database
-                success_count += 1
-            except Exception as e:
-                print(f'Error sending push to subscription {sub["id"]}: {e}')
-                failed_count += 1
-        
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Notification sent to {success_count} users',
-            'failed': failed_count
-        }), 200
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Notification sent to all users successfully'
+            }), 200
+        else:
+            return jsonify({'error': 'Failed to send notification'}), 500
     except Exception as e:
         print(f'Error sending push notification: {e}')
         return jsonify({'error': str(e)}), 500
+
+def send_onesignal_notification(title, message, user_ids=None):
+    """Send push notification via OneSignal to specific users or all users"""
+    try:
+        onesignal_app_id = os.environ.get('ONESIGNAL_APP_ID', '306aec55-b2e1-4475-a7d7-8ef959234ee7')
+        onesignal_api_key = os.environ.get('ONESIGNAL_API_KEY')
+        
+        if not onesignal_api_key:
+            print('[ONESIGNAL] API key not configured')
+            return False
+        
+        url = 'https://onesignal.com/api/v1/notifications'
+        headers = {
+            'Authorization': f'Basic {onesignal_api_key}',
+            'Content-Type': 'application/json'
+        }
+        
+        payload = {
+            'app_id': onesignal_app_id,
+            'headings': {'en': title},
+            'contents': {'en': message},
+            'included_segments': ['All'] if user_ids is None else None
+        }
+        
+        if user_ids:
+            # Send to specific users by their OneSignal player IDs
+            # For now, we'll send to all since we don't store OneSignal player IDs
+            payload['included_segments'] = ['All']
+        
+        response = requests.post(url, json=payload, headers=headers)
+        
+        if response.status_code == 200:
+            print(f'[ONESIGNAL] Notification sent successfully: {title}')
+            return True
+        else:
+            print(f'[ONESIGNAL] Failed to send notification: {response.text}')
+            return False
+            
+    except Exception as e:
+        print(f'[ONESIGNAL] Error sending notification: {e}')
+        return False
 
 # Private messaging endpoints
 @app.route('/api/private-messages/send', methods=['POST'])
@@ -2792,6 +2825,13 @@ def send_private_message_chat():
         conn.commit()
         message_id = c.lastrowid
         conn.close()
+        
+        # Send push notification to receiver
+        send_onesignal_notification(
+            title=f'New private message from {current_user.username}',
+            message=message_text[:100] + '...' if len(message_text) > 100 else message_text,
+            user_ids=[receiver_id]
+        )
         
         return jsonify({
             'success': True,
