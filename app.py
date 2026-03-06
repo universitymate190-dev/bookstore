@@ -2027,6 +2027,9 @@ def admin():
     if admin_email_env:
         admin_emails.append(admin_email_env)
     
+    print(f"[DEBUG] Admin check - User email: {current_user.email}")
+    print(f"[DEBUG] Admin emails allowed: {admin_emails}")
+    
     if current_user.email not in admin_emails:
         flash('Access denied. Admin access required.', 'danger')
         return redirect(url_for('dashboard'))
