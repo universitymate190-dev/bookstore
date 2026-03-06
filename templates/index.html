@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bookstore - Books, Files, Notes & Exams</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "306aec55-b2e1-4475-a7d7-8ef959234ee7",
+        });
+      });
+    </script>
 </head>
 <body>
     <nav class="navbar">
@@ -709,5 +718,6 @@
             }
         });
     </script>
+    <div class='onesignal-customlink-container'></div>
 </body>
 </html>
