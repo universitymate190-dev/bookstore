@@ -2021,7 +2021,11 @@ def show_result(result_id):
 @login_required
 def admin():
     # Check if user has admin email (specific admin access)
-    admin_emails = ['admin@bookstore.com', 'shakesian6@gmail.com']  # Add your admin emails here
+    # Support both hardcoded emails and environment variable
+    admin_emails = ['admin@bookstore.com', 'shakesian6@gmail.com']
+    admin_email_env = os.environ.get('ADMIN_EMAIL')
+    if admin_email_env:
+        admin_emails.append(admin_email_env)
     
     if current_user.email not in admin_emails:
         flash('Access denied. Admin access required.', 'danger')
