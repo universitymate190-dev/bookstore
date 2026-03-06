@@ -3,6 +3,8 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import os
 from datetime import datetime, timedelta
 import secrets
@@ -23,12 +25,17 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 # Database initialization
-DATABASE = 'database.db'
+DATABASE_URL = os.environ.get('DATABASE_URL')
+USE_POSTGRES = DATABASE_URL is not None
 
 def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
+    if USE_POSTGRES:
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        return conn
+    else:
+        conn = sqlite3.connect('database.db')
+        conn.row_factory = sqlite3.Row
+        return conn
 
 def parse_datetime(date_string):
     """Parse datetime string from SQLite"""
@@ -48,239 +55,438 @@ def init_db():
     conn = get_db()
     c = conn.cursor()
     
-    # Users table
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT DEFAULT 'user',
-        profile_picture TEXT,
-        suspended BOOLEAN DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )''')
-    
-    # Files table
-    c.execute('''CREATE TABLE IF NOT EXISTS files (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        filename TEXT NOT NULL,
-        category TEXT NOT NULL,
-        uploaded_by TEXT NOT NULL,
-        file_path TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (uploaded_by) REFERENCES users(username)
-    )''')
-    
-    # Exams table
-    c.execute('''CREATE TABLE IF NOT EXISTS exams (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        subject TEXT NOT NULL,
-        time_limit INTEGER NOT NULL,
-        total_questions INTEGER,
-        passing_marks INTEGER,
-        description TEXT,
-        created_by TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (created_by) REFERENCES users(username)
-    )''')
-    
-    # Questions table
-    c.execute('''CREATE TABLE IF NOT EXISTS questions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        exam_id INTEGER NOT NULL,
-        question TEXT NOT NULL,
-        optionA TEXT NOT NULL,
-        optionB TEXT NOT NULL,
-        optionC TEXT NOT NULL,
-        optionD TEXT NOT NULL,
-        correct_answer TEXT NOT NULL,
-        FOREIGN KEY (exam_id) REFERENCES exams(id)
-    )''')
-    
-    # Results table
-    c.execute('''CREATE TABLE IF NOT EXISTS results (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        exam_id INTEGER NOT NULL,
-        score INTEGER,
-        total INTEGER NOT NULL,
-        answers TEXT,
-        grading_status TEXT DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (exam_id) REFERENCES exams(id)
-    )''')
-    
-    # Groups table
-    c.execute('''CREATE TABLE IF NOT EXISTS groups (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        created_by INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (created_by) REFERENCES users(id)
-    )''')
-    
-    # Group memberships table
-    c.execute('''CREATE TABLE IF NOT EXISTS group_memberships (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        group_id INTEGER NOT NULL,
-        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (group_id) REFERENCES groups(id),
-        UNIQUE(user_id, group_id)
-    )''')
-    
-    # Group courses table (many-to-many relationship)
-    c.execute('''CREATE TABLE IF NOT EXISTS group_courses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_id INTEGER NOT NULL,
-        course_id INTEGER NOT NULL,
-        added_by INTEGER NOT NULL,
-        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (group_id) REFERENCES groups(id),
-        FOREIGN KEY (course_id) REFERENCES courses(id),
-        FOREIGN KEY (added_by) REFERENCES users(id),
-        UNIQUE(group_id, course_id)
-    )''')
-    
-    # Group assignments table
-    c.execute('''CREATE TABLE IF NOT EXISTS group_assignments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_id INTEGER NOT NULL,
-        course_id INTEGER NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT,
-        due_date TIMESTAMP,
-        created_by INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (group_id) REFERENCES groups(id),
-        FOREIGN KEY (course_id) REFERENCES courses(id),
-        FOREIGN KEY (created_by) REFERENCES users(id)
-    )''')
-    
-    # Assignment questions table
-    c.execute('''CREATE TABLE IF NOT EXISTS assignment_questions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        assignment_id INTEGER NOT NULL,
-        question TEXT NOT NULL,
-        question_type TEXT DEFAULT 'text', -- 'text', 'multiple_choice', 'essay'
-        options TEXT, -- JSON string for multiple choice options
-        correct_answer TEXT,
-        points INTEGER DEFAULT 1,
-        FOREIGN KEY (assignment_id) REFERENCES group_assignments(id)
-    )''')
-    
-    # Assignment submissions table
-    c.execute('''CREATE TABLE IF NOT EXISTS assignment_submissions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        assignment_id INTEGER NOT NULL,
-        user_id INTEGER NOT NULL,
-        answers TEXT NOT NULL, -- JSON string of answers
-        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        score INTEGER,
-        feedback TEXT,
-        graded_by INTEGER,
-        graded_at TIMESTAMP,
-        FOREIGN KEY (assignment_id) REFERENCES group_assignments(id),
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (graded_by) REFERENCES users(id),
-        UNIQUE(assignment_id, user_id)
-    )''')
-    
-    # Notifications table
-    c.execute('''CREATE TABLE IF NOT EXISTS notifications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        message TEXT NOT NULL,
-        created_by INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        expires_at TIMESTAMP,
-        is_read BOOLEAN DEFAULT FALSE
-    )''')
-    
-    # User notifications table (many-to-many relationship)
-    c.execute('''CREATE TABLE IF NOT EXISTS user_notifications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        notification_id INTEGER NOT NULL,
-        is_read BOOLEAN DEFAULT FALSE,
-        read_at TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (notification_id) REFERENCES notifications(id),
-        UNIQUE(user_id, notification_id)
-    )''')
-    
-    # Courses table
-    c.execute('''CREATE TABLE IF NOT EXISTS courses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        created_by INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (created_by) REFERENCES users(id)
-    )''')
-    
-    # Notes table
-    c.execute('''CREATE TABLE IF NOT EXISTS notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        course_id INTEGER,
-        created_by INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (created_by) REFERENCES users(id),
-        FOREIGN KEY (course_id) REFERENCES courses(id)
-    )''')
-    
-    # User notes table (many-to-many relationship)
-    c.execute('''CREATE TABLE IF NOT EXISTS user_notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        note_id INTEGER NOT NULL,
-        is_read BOOLEAN DEFAULT FALSE,
-        read_at TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (note_id) REFERENCES notes(id),
-        UNIQUE(user_id, note_id)
-    )''')
-    
-    # Group messages table
-    c.execute('''CREATE TABLE IF NOT EXISTS group_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        group_id INTEGER NOT NULL,
-        user_id INTEGER NOT NULL,
-        message TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (group_id) REFERENCES groups(id),
-        FOREIGN KEY (user_id) REFERENCES users(id)
-    )''')
-    
-    # Private messages table
-    c.execute('''CREATE TABLE IF NOT EXISTS private_messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        sender_id INTEGER NOT NULL,
-        receiver_id INTEGER NOT NULL,
-        message TEXT NOT NULL,
-        is_read BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (sender_id) REFERENCES users(id),
-        FOREIGN KEY (receiver_id) REFERENCES users(id)
-    )''')
-    
-    # Push subscriptions table
-    c.execute('''CREATE TABLE IF NOT EXISTS push_subscriptions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        endpoint TEXT NOT NULL UNIQUE,
-        auth TEXT NOT NULL,
-        p256dh TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id)
-    )''')
+    if USE_POSTGRES:
+        # PostgreSQL table creation
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT DEFAULT 'user',
+            profile_picture TEXT,
+            suspended BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS files (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            category TEXT NOT NULL,
+            uploaded_by TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uploaded_by) REFERENCES users(username)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS exams (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            time_limit INTEGER NOT NULL,
+            total_questions INTEGER,
+            passing_marks INTEGER,
+            description TEXT,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(username)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS questions (
+            id SERIAL PRIMARY KEY,
+            exam_id INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            optionA TEXT NOT NULL,
+            optionB TEXT NOT NULL,
+            optionC TEXT NOT NULL,
+            optionD TEXT NOT NULL,
+            correct_answer TEXT NOT NULL,
+            FOREIGN KEY (exam_id) REFERENCES exams(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS results (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            exam_id INTEGER NOT NULL,
+            score INTEGER,
+            total INTEGER NOT NULL,
+            answers TEXT,
+            grading_status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (exam_id) REFERENCES exams(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS groups (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS group_memberships (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            group_id INTEGER NOT NULL,
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            UNIQUE(user_id, group_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS courses (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS group_courses (
+            id SERIAL PRIMARY KEY,
+            group_id INTEGER NOT NULL,
+            course_id INTEGER NOT NULL,
+            added_by INTEGER NOT NULL,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            FOREIGN KEY (course_id) REFERENCES courses(id),
+            FOREIGN KEY (added_by) REFERENCES users(id),
+            UNIQUE(group_id, course_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS group_assignments (
+            id SERIAL PRIMARY KEY,
+            group_id INTEGER NOT NULL,
+            course_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            due_date TIMESTAMP,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            FOREIGN KEY (course_id) REFERENCES courses(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS assignment_questions (
+            id SERIAL PRIMARY KEY,
+            assignment_id INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            question_type TEXT DEFAULT 'text',
+            options TEXT,
+            correct_answer TEXT,
+            points INTEGER DEFAULT 1,
+            FOREIGN KEY (assignment_id) REFERENCES group_assignments(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS assignment_submissions (
+            id SERIAL PRIMARY KEY,
+            assignment_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            answers TEXT NOT NULL,
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            score INTEGER,
+            feedback TEXT,
+            graded_by INTEGER,
+            graded_at TIMESTAMP,
+            FOREIGN KEY (assignment_id) REFERENCES group_assignments(id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (graded_by) REFERENCES users(id),
+            UNIQUE(assignment_id, user_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            is_read BOOLEAN DEFAULT FALSE
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS user_notifications (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            notification_id INTEGER NOT NULL,
+            is_read BOOLEAN DEFAULT FALSE,
+            read_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (notification_id) REFERENCES notifications(id),
+            UNIQUE(user_id, notification_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS notes (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            course_id INTEGER,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id),
+            FOREIGN KEY (course_id) REFERENCES courses(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS user_notes (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            note_id INTEGER NOT NULL,
+            is_read BOOLEAN DEFAULT FALSE,
+            read_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (note_id) REFERENCES notes(id),
+            UNIQUE(user_id, note_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS group_messages (
+            id SERIAL PRIMARY KEY,
+            group_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS private_messages (
+            id SERIAL PRIMARY KEY,
+            sender_id INTEGER NOT NULL,
+            receiver_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            is_read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sender_id) REFERENCES users(id),
+            FOREIGN KEY (receiver_id) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            endpoint TEXT NOT NULL UNIQUE,
+            auth TEXT NOT NULL,
+            p256dh TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )''')
+    else:
+        # SQLite table creation (existing code)
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT DEFAULT 'user',
+            profile_picture TEXT,
+            suspended BOOLEAN DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            filename TEXT NOT NULL,
+            category TEXT NOT NULL,
+            uploaded_by TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uploaded_by) REFERENCES users(username)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS exams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            time_limit INTEGER NOT NULL,
+            total_questions INTEGER,
+            passing_marks INTEGER,
+            description TEXT,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(username)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exam_id INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            optionA TEXT NOT NULL,
+            optionB TEXT NOT NULL,
+            optionC TEXT NOT NULL,
+            optionD TEXT NOT NULL,
+            correct_answer TEXT NOT NULL,
+            FOREIGN KEY (exam_id) REFERENCES exams(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            exam_id INTEGER NOT NULL,
+            score INTEGER,
+            total INTEGER NOT NULL,
+            answers TEXT,
+            grading_status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (exam_id) REFERENCES exams(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS group_memberships (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            group_id INTEGER NOT NULL,
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            UNIQUE(user_id, group_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS courses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS group_courses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL,
+            course_id INTEGER NOT NULL,
+            added_by INTEGER NOT NULL,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            FOREIGN KEY (course_id) REFERENCES courses(id),
+            FOREIGN KEY (added_by) REFERENCES users(id),
+            UNIQUE(group_id, course_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS group_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL,
+            course_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            due_date TIMESTAMP,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            FOREIGN KEY (course_id) REFERENCES courses(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS assignment_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assignment_id INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            question_type TEXT DEFAULT 'text',
+            options TEXT,
+            correct_answer TEXT,
+            points INTEGER DEFAULT 1,
+            FOREIGN KEY (assignment_id) REFERENCES group_assignments(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS assignment_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assignment_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            answers TEXT NOT NULL,
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            score INTEGER,
+            feedback TEXT,
+            graded_by INTEGER,
+            graded_at TIMESTAMP,
+            FOREIGN KEY (assignment_id) REFERENCES group_assignments(id),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (graded_by) REFERENCES users(id),
+            UNIQUE(assignment_id, user_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            is_read BOOLEAN DEFAULT FALSE
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS user_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            notification_id INTEGER NOT NULL,
+            is_read BOOLEAN DEFAULT FALSE,
+            read_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (notification_id) REFERENCES notifications(id),
+            UNIQUE(user_id, notification_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            course_id INTEGER,
+            created_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id),
+            FOREIGN KEY (course_id) REFERENCES courses(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS user_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            note_id INTEGER NOT NULL,
+            is_read BOOLEAN DEFAULT FALSE,
+            read_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (note_id) REFERENCES notes(id),
+            UNIQUE(user_id, note_id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS group_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id) REFERENCES groups(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS private_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id INTEGER NOT NULL,
+            receiver_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            is_read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sender_id) REFERENCES users(id),
+            FOREIGN KEY (receiver_id) REFERENCES users(id)
+        )''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            endpoint TEXT NOT NULL UNIQUE,
+            auth TEXT NOT NULL,
+            p256dh TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )''')
     
     conn.commit()
     conn.close()
@@ -290,48 +496,88 @@ def migrate_db():
     conn = get_db()
     c = conn.cursor()
     
-    # Check if columns exist and add them if they don't
     try:
-        # Migrate users table
-        c.execute('PRAGMA table_info(users)')
-        user_columns = [column[1] for column in c.fetchall()]
-        
-        if 'suspended' not in user_columns:
-            c.execute('ALTER TABLE users ADD COLUMN suspended BOOLEAN DEFAULT 0')
-        
-        c.execute('PRAGMA table_info(exams)')
-        columns = [column[1] for column in c.fetchall()]
-        
-        if 'total_questions' not in columns:
-            c.execute('ALTER TABLE exams ADD COLUMN total_questions INTEGER')
-        if 'passing_marks' not in columns:
-            c.execute('ALTER TABLE exams ADD COLUMN passing_marks INTEGER')
-        if 'description' not in columns:
-            c.execute('ALTER TABLE exams ADD COLUMN description TEXT')
-        
-        # Migrate results table
-        c.execute('PRAGMA table_info(results)')
-        result_columns = [column[1] for column in c.fetchall()]
-        
-        if 'grading_status' not in result_columns:
-            c.execute('ALTER TABLE results ADD COLUMN grading_status TEXT DEFAULT "pending"')
-        if 'score' in result_columns:
-            # Make score nullable for pending grading
-            c.execute('ALTER TABLE results RENAME TO results_old')
-            c.execute('''CREATE TABLE results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                exam_id INTEGER NOT NULL,
-                score INTEGER,
-                total INTEGER NOT NULL,
-                answers TEXT,
-                grading_status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (exam_id) REFERENCES exams(id)
-            )''')
-            c.execute('INSERT INTO results (id, user_id, exam_id, score, total, answers, created_at) SELECT id, user_id, exam_id, score, total, answers, created_at FROM results_old')
-            c.execute('DROP TABLE results_old')
+        if USE_POSTGRES:
+            # PostgreSQL migration
+            # Check and add suspended column to users
+            c.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'users' AND column_name = 'suspended'
+            """)
+            if not c.fetchone():
+                c.execute('ALTER TABLE users ADD COLUMN suspended BOOLEAN DEFAULT FALSE')
+            
+            # Check and add columns to exams
+            c.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'exams' AND column_name = 'total_questions'
+            """)
+            if not c.fetchone():
+                c.execute('ALTER TABLE exams ADD COLUMN total_questions INTEGER')
+            
+            c.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'exams' AND column_name = 'passing_marks'
+            """)
+            if not c.fetchone():
+                c.execute('ALTER TABLE exams ADD COLUMN passing_marks INTEGER')
+            
+            c.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'exams' AND column_name = 'description'
+            """)
+            if not c.fetchone():
+                c.execute('ALTER TABLE exams ADD COLUMN description TEXT')
+            
+            # Check and add grading_status to results
+            c.execute("""
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'results' AND column_name = 'grading_status'
+            """)
+            if not c.fetchone():
+                c.execute('ALTER TABLE results ADD COLUMN grading_status TEXT DEFAULT \'pending\'')
+        else:
+            # SQLite migration (existing code)
+            # Migrate users table
+            c.execute('PRAGMA table_info(users)')
+            user_columns = [column[1] for column in c.fetchall()]
+            
+            if 'suspended' not in user_columns:
+                c.execute('ALTER TABLE users ADD COLUMN suspended BOOLEAN DEFAULT 0')
+            
+            c.execute('PRAGMA table_info(exams)')
+            columns = [column[1] for column in c.fetchall()]
+            
+            if 'total_questions' not in columns:
+                c.execute('ALTER TABLE exams ADD COLUMN total_questions INTEGER')
+            if 'passing_marks' not in columns:
+                c.execute('ALTER TABLE exams ADD COLUMN passing_marks INTEGER')
+            if 'description' not in columns:
+                c.execute('ALTER TABLE exams ADD COLUMN description TEXT')
+            
+            # Migrate results table
+            c.execute('PRAGMA table_info(results)')
+            result_columns = [column[1] for column in c.fetchall()]
+            
+            if 'grading_status' not in result_columns:
+                c.execute('ALTER TABLE results ADD COLUMN grading_status TEXT DEFAULT "pending"')
+            if 'score' in result_columns:
+                # Make score nullable for pending grading
+                c.execute('ALTER TABLE results RENAME TO results_old')
+                c.execute('''CREATE TABLE results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    exam_id INTEGER NOT NULL,
+                    score INTEGER,
+                    total INTEGER NOT NULL,
+                    answers TEXT,
+                    grading_status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    FOREIGN KEY (exam_id) REFERENCES exams(id)
+                )''')
+                c.execute('INSERT INTO results (id, user_id, exam_id, score, total, answers, created_at) SELECT id, user_id, exam_id, score, total, answers, created_at FROM results_old')
+                c.execute('DROP TABLE results_old')
         
         conn.commit()
     except Exception as e:
